@@ -1,0 +1,71 @@
+import torch
+import torch.nn as nn
+import numpy as np
+import jieba
+
+epochs = 1000
+hidden_size = 10
+embedding_size = 4
+sentences = "忘却成都来十载"
+batch_size = 3
+sentences_cut = jieba.lcut(sentences)
+input_size = len(sentences_cut)
+print("input_size:", input_size)
+print("sentences_cut:", sentences_cut)
+word_dict = {w: i for i, w in enumerate(sentences_cut)}
+print(word_dict)
+
+def make_batch():
+    input_batch, target_batch = [], []
+    input_batch = [[word_dict[n] for n in sentences_cut[:-1]]]
+    target_batch = [[word_dict[sentences_cut[-1]]]]
+    print("input_batch:", input_batch)
+    return torch.LongTensor(input_batch), torch.LongTensor(target_batch)
+
+
+# print(input_batch)
+
+
+class wordPred(nn.Module):
+    def __init__(self):
+        super(wordPred, self).__init__()
+        self.emb = nn.Embedding(batch_size, embedding_size)
+        self.rnn = nn.RNN(input_size=input_size, hidden_size=hidden_size)
+        self.fc = nn.Linear(hidden_size, input_size)
+
+    def forward(self, inputs, hidden):
+        print("inputs:", inputs)
+        print("inputs size:", inputs.size())
+        print("hidden_size:", hidden.size())
+        inputs = self.emb(inputs)
+        print("inputs:", inputs)
+        print(inputs.size())
+        output, hidden = self.rnn(inputs, hidden)
+        print("output:", output)
+        print("aaoutput size:", output.size())
+        output = output[-1]
+        print("final output:", output.size())
+
+        output = self.fc(output)
+        print("aaoutput size:", output.size())
+        return output
+
+if __name__ == '__main__':
+    model = wordPred()
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+    for epoch in range(epochs):
+        input_batch, target_batch = make_batch()
+
+        hidden = torch.zeros(1, batch_size, hidden_size)
+
+        output = model(input_batch, hidden)
+        print("target_batch size:", target_batch.size())
+        print("output size:", output.size())
+        loss = criterion(output, target_batch)
+
+        print('Epoch:', '%3d' % (epoch + 1), 'Loss:', loss.item())
+
+        loss.backward()
+        optimizer.step()
