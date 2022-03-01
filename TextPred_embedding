@@ -1,0 +1,85 @@
+import torch
+import torch.nn as nn
+import numpy as np
+import jieba
+
+epochs = 10
+hidden_size = 3
+embedding_size = 10
+
+sentences = "忘却成都来十载"
+sentences_cut = jieba.lcut(sentences)
+print("sentences_cut:", sentences_cut)
+word_dict = {w: i for i, w in enumerate(sentences_cut)}
+print(word_dict)
+input_size = len(word_dict)
+num_dict = {i:w for i,w in enumerate(sentences_cut)}
+batch_size = len(word_dict)
+print(word_dict)
+
+def make_batch():
+    input_batch, target_batch = [], []
+
+    input_batch = [word_dict[n] for n in sentences_cut[:-1]]
+    target_batch = [word_dict[sentences_cut[-1]]]
+    # print(target_batch)
+    return torch.LongTensor(input_batch), torch.LongTensor(target_batch)
+
+
+class wordPred(nn.Module):
+    def __init__(self):
+        super(wordPred, self).__init__()
+        self.emb = nn.Embedding(3, embedding_size)
+        self.rnn = nn.RNN(input_size=embedding_size, hidden_size=hidden_size)
+        self.fc1 = nn.Linear(3, input_size)
+        # self.fc2 = nn.Linear(1, input_size)
+
+    def forward(self, inputs, hidden):
+        # inputs = inputs.unsqueeze(0)
+        # print(inputs.size())
+        inputs = self.emb(inputs)
+        # print(inputs)
+        inputs = inputs.unsqueeze(0)
+        # print('inputs size:',inputs.size())
+        output, hidden = self.rnn(inputs, hidden)
+        # print('output size:',output.size())
+        output = output.transpose(0, 1)
+
+        output = output[-1]
+        # print("output size:", output.size())
+
+        output = self.fc1(output)
+        # output = self.fc2(output)
+        # print(output)
+        return output
+
+if __name__ == '__main__':
+    model = wordPred()
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+    hidden = torch.zeros(1, 3, hidden_size)
+    input_batch, target_batch = make_batch()
+    # print('input_batch size:',input_batch.size())
+    # print("input_batch:",input_batch)
+    for epoch in range(epochs):
+        output = model(input_batch, hidden)
+        # print("target_batch:", target_batch)
+        # print("target_batch size:", target_batch.size())
+        # print("output size:", output.size())
+        loss = criterion(output, target_batch)
+
+        print('Epoch:', '%3d' % (epoch + 1), 'Loss:', loss.item())
+
+        loss.backward()
+        optimizer.step()
+
+    input = [sen for sen in sentences_cut]
+    # print("input:",input)
+    # for sen in sentences_cut:
+    #     print('********************',sen)
+
+    hidden = torch.zeros(1, 3, hidden_size)
+    predict = model(input_batch, hidden).data.max(1, keepdim=True)[1]
+    print("predict:", predict)
+    print([sen for sen in sentences_cut[:-1]], '->', [num_dict[predict.item()]])
