@@ -1,0 +1,46 @@
+from random import randint
+import jieba
+import jieba.analyse
+import pandas as pd
+import codecs
+from keras.preprocessing.text import Tokenizer
+import matplotlib
+
+import numpy as np
+from tensorflow.keras.utils import to_categorical
+from sklearn.model_selection import train_test_split
+from keras.models import Sequential
+from keras.preprocessing.sequence import pad_sequences
+from keras.layers import Dense, Embedding, SimpleRNN, Dropout
+from keras import regularizers
+import matplotlib.pyplot as plt
+
+
+def GetText():
+    contents = []
+    with codecs.open('./data/ssub_data.txt', mode='rU') as file:
+        for line in file:
+            contents.append(line)
+        print("contents:", contents)
+        return contents
+
+
+contents = GetText()
+print("ori contents:", contents)
+GetText()
+
+
+def GetDictionary():
+    contents_line = []
+    for i in contents:
+        i = str(i).split(" ")
+        contents_line.extend(i)
+        print("content_line:", contents_line)
+
+    word_dict = {w: i for i, w in enumerate(contents_line)}
+
+    return word_dict
+
+
+word_dict = GetDictionary()
+print("word_dict:", word_dict)
