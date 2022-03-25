@@ -166,6 +166,7 @@ class CBOW:
         final_embeddings = self.train_wordvec(vocabulary_size, self.batch_size,
                                               self.embedding_size, self.window_size,
                                               self.num_sampled, self.num_steps, data)
+        # 词向量降维
         tsne = TSNE(n_components=2, learning_rate=500)
         low_dim_embedding = tsne.fit_transform(final_embeddings)
         self.save_embedding(low_dim_embedding, self.modelpath, reverse_dictionary)
