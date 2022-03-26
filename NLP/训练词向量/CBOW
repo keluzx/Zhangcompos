@@ -115,12 +115,15 @@ class CBOW:
         with graph.as_default(), tf.device('/cpu:0'):
             train_dataset = tf.placeholder(tf.int32, shape=[batch_size, 2 * window_size])
             train_labels = tf.placeholder(tf.int32, shape=[batch_size, 1])
+            
+            # random_uniform 生成维度为[vocabulary_size, embedding_size]的随机数
             embeddings = tf.Variable(tf.random_uniform([vocabulary_size, embedding_size],
                                                        -1.0, 1.0))
             print("embeddings:", embeddings)
             softmax_weights = tf.Variable(tf.truncated_normal([vocabulary_size, embedding_size],
                                                               stddev=1.0 / math.sqrt(embedding_size)))
             softmax_biases = tf.Variable(tf.zeros([vocabulary_size]))
+            
             # 与skipgram不同， cbow的输入是上下文向量的均值，因此需要做相应变换
             context_embeddings = []
             for i in range(2 * window_size):
@@ -166,6 +169,7 @@ class CBOW:
         final_embeddings = self.train_wordvec(vocabulary_size, self.batch_size,
                                               self.embedding_size, self.window_size,
                                               self.num_sampled, self.num_steps, data)
+                                              
         # 词向量降维
         tsne = TSNE(n_components=2, learning_rate=500)
         low_dim_embedding = tsne.fit_transform(final_embeddings)
