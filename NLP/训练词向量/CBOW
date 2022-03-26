@@ -143,6 +143,7 @@ class CBOW:
             average_loss = 0
             for step in range(num_steps):
                 batch_data, batch_labels = self.generate_batch(batch_size, window_size, data)
+                # feed_dict 给placeholder创建出来的张量赋值
                 feed_dict = {train_dataset: batch_data, train_labels: batch_labels}
                 _, l = session.run([optimizer, loss], feed_dict=feed_dict)
                 average_loss += l
