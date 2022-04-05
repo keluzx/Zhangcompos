@@ -27,7 +27,7 @@ def readFileUTF8(filename):
     # print("fr:", fr)
     text = ''
     for line in fr:
-        print("line:", line)
+        # print("line:", line)
         text += line.strip()
     print("text:", text)
     return text
@@ -58,7 +58,6 @@ def extract_all_information(text):
 
 
 def getType(type):
-    print("type:", type)
     if type == '症状和体征':
         return 'SIGNS'
     elif type == '检查和检验':
@@ -85,7 +84,6 @@ def split(text):
             # < 前面的信息写入
             if start != end:
                 res.append(text[start: end])
-                print("res:", res)
                 start = end + 1
             else:
                 start += 1
@@ -99,7 +97,6 @@ def split(text):
             end += 1
     if start != end:
         res.append(text[start: end])
-    print("final res:", res)
     return res
 
 
@@ -118,11 +115,8 @@ def text2nerformat(text):
     flag = 0
     features = []
     pieces = split(text)
-    print("pieces[1]:", pieces[1])
-    print("pieces[2]:", pieces[2])
     pre = 0
     for seg in segment:  # seg表示分词后的任意字符及其对应的词性
-        print('seg' * 5, seg)
         '''if else 循环控制处理的内容是<>符号之外的文本'''
         if seg.word == '<':
             flag = 1
@@ -135,26 +129,17 @@ def text2nerformat(text):
         if flag == 0:
             # 如果内容是医疗命名实体，则将其放入stack列表中
             '''<治疗>右髋部手术不慎摔倒糖尿病胰岛素</治疗>糖尿病'''
-            print("start:", start)
-            print('dis:', pieces[start])
             while start < len(pieces) and getType(pieces[start]) != 'OTHER':
                 stack.append(getType(pieces[start]))
-                print("stack:", stack)
                 start += 1
-            print('second_while:', pieces[start])
             # 判断下一个start的第二个字符是否是实体
             while start < len(pieces) and getType(pieces[start][1:]) != 'OTHER':
-                print("222:", pieces[start])
                 stack.pop()  # pop的原因是pop的原因是，对于<>abc</>，abc已经遍历结束
                 start += 1
-            print('third_while:', getType(pieces[start]))
             # 判断下一个start的首字符是否是实体
             while start < len(pieces) and getType(pieces[start]) != 'OTHER':
-                print("333")
-                print('3333:', pieces[start])
                 stack.append(getType(pieces[start]))
                 start += 1
-            print("seg.word:", seg.word)
             index = pieces[start].find(seg.word, pre)
 
             pre = index + 1
@@ -162,7 +147,6 @@ def text2nerformat(text):
                 type = '0'
                 if start < len(pieces) and index + len(seg.word) == len(pieces[start]):
                     start += 1
-                    print("start_index:", start)
             else:
                 if start < len(pieces):
                     if index == 0 and len(seg.word) == len(pieces[start]):
@@ -183,9 +167,9 @@ def text2nerformat(text):
                         type = 'I-' + stack[-1]
 
             features.append([seg.word, seg.flag, type])
-            print("features:", features)
+            # print("features:", features)
             # print '%s, %s, %s' % (seg.word, seg.flag, type)
-    print("final features:", features)
+    # print("final features:", features)
     return features
 
 
@@ -225,7 +209,7 @@ if __name__ == '__main__':
         filename = 'data/病史特点-' + str(i) + '.txt'
         print("filename:", filename)
         answer = text2nerformat(readFileUTF8(filename))
-        print("answer:", answer)
+        # print("answer:", answer)
         for [word, pos, ner] in answer:
             fw.write(word + '\t' + pos + '\t' + ner + '\n')
         print('file ' + str(i) + ' has already finished!')
