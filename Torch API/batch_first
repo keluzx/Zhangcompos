@@ -1,0 +1,4 @@
+batch_first      表示首先计算一个时刻中的所有输入单元
+seq_len first    表示首先计算不同时刻的第一个输入单元
+
+seq_len 是并行运算
