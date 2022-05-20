@@ -1,4 +1,4 @@
-import reimport reimport reimport reimport time
+import reimport reimport reimport reimport timeimport time
 import torch
 import jieba
 import json
@@ -39,8 +39,8 @@ class RNNMedNER(nn.Module):
         self.fc_labels_sec = nn.Linear(hidden_size, n_class)
 
     def forward(self, input_batch, hidden):
-        # print('input_batch_size:', input_batch.size())
-        output_emb = self.emb(input_batch)
+        # print('input_batch_size:', input_batch.size(a))
+        output_emb = self.emb(input_batch.data)
         # print('output_emb_size:', output_emb.size())
         output, _ = self.rnn(output_emb, hidden)
         # print('outPut_size_first:', output.size())
@@ -54,18 +54,28 @@ class RNNMedNER(nn.Module):
 
 def max_len(text):
     sub_line_start_end_len = []
-    max_labels_len = 0
+    sub_line_len = []
+    max_labels_len, max_original_len = 0, 0
     sum_labels_len = 0
     for line in text:
         text_json = json.loads(line)
+        sub_original_text = text_json.get('originalText')
         sub_entities_text = text_json.get('entities')
+        sub_line_len.append(len(sub_original_text))
         sub_line_start_end_len.append(len(sub_entities_text))
         sum_labels_len += len(sub_entities_text)
+
         if len(sub_entities_text) > max_labels_len:
             max_labels_len = len(sub_entities_text)
+        if len(sub_original_text) > max_original_len:
+            max_original_len = len(sub_original_text)
+
     print("sum_labels_len:", sum_labels_len)
+    print("sub_line_len:", sub_line_len)
+    print("max_labels_len:", max_labels_len)
+    print("max_original_len:", max_original_len)
     print("sub_line_start_end_len:", sub_line_start_end_len)
-    return max_labels_len, sum_labels_len, sub_line_start_end_len
+    return max_labels_len, sum_labels_len, sub_line_start_end_len, sub_line_len
 
 
 def readData(text):
@@ -181,15 +191,16 @@ def readData(text):
 
 if __name__ == '__main__':
     content = []
-    with codecs.open('data/subtask1_train/subtask1_training_part1.txt',
+    with codecs.open('data/subtask1_train/demo.txt',
                      encoding='utf_8_sig', mode='rU') as f:
-        max_labels_length, sum_labels_len, sub_line_start_end_len = max_len(f)
+        max_labels_length, sum_labels_len, sub_line_start_end_len, sub_line_len = max_len(f)
 
-    with codecs.open('data/subtask1_train/subtask1_training_part1.txt',
+    with codecs.open('data/subtask1_train/demo.txt',
                      encoding='utf_8_sig', mode='rU') as f:
         input_batch, labels_starts, labels_ends, labels_labels, labels_dict,\
         num_dict, max_line_len, sum_words = readData(f)
 
+    n_class = len(labels_dict)
     # labels_starts = torch.LongTensor(labels_starts)
     # labels_ends = torch.LongTensor(labels_ends)
     labels_labels = torch.LongTensor(labels_labels)
@@ -197,13 +208,12 @@ if __name__ == '__main__':
     labels_starts = pad_sequence(labels_starts, batch_first=True)
     labels_ends = pad_sequence(labels_ends, batch_first=True)
     print("labels_starts:", labels_starts)
+    input_batch = pack_padded_sequence(input_batch, sub_line_len, enforce_sorted=False, batch_first=True)
     labels_starts = pack_padded_sequence(labels_starts, sub_line_start_end_len, enforce_sorted=False, batch_first=True)
     print("labels_starts_pack:", labels_starts)
-
-    # print("labels_labels_model:", labels_labels)
-    n_class = len(labels_dict)
-
-    print("input_batch_first:", input_batch.size())
+    print("input_batch_data:", input_batch.data)
+    print("input_batch_data_size:", input_batch.data.size())
+    print('input_batch_batch_size:', input_batch.batch_sizes)
     print("labels_starts_size:", labels_starts)
     print("labels_ends_size:", labels_ends.size())
 
@@ -232,5 +242,6 @@ if __name__ == '__main__':
     labels_predicted = output.data.max(1, keepdim=True)[1]
     print('->', [num_dict[n.item()] for n in labels_predicted.squeeze()])
     # print("labels_predicted:", labels_predicted.data)
+
 
 
