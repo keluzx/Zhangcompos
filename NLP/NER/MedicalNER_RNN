@@ -1,4 +1,4 @@
-import reimport reimport re
+import reimport reimport reimport re
 import torch
 import jieba
 import json
@@ -45,6 +45,7 @@ class RNNMedNER(nn.Module):
         output, _ = self.rnn(output_emb, hidden)
         # print('outPut_size_first:', output.size())
         output_labels = self.fc_labels_fir(output[-1].transpose(0, 1))
+        # print('output_labels:', output_labels.size())
         output_labels = self.fc_labels_sec(output_labels.transpose(0, 1))
         # print('output_labels:', output_labels.size())
 
@@ -58,16 +59,14 @@ def max_len(text):
     for line in text:
         text_json = json.loads(line)
         sub_entities_text = text_json.get('entities')
-
+        sum_labels_len += len(sub_entities_text)
         if len(sub_entities_text) > max_labels_len:
-            sum_labels_len += len(sub_entities_text)
             max_labels_len = len(sub_entities_text)
     print("sum_labels_len:", sum_labels_len)
     return max_labels_len, sum_labels_len
 
 
 def readData(text):
-    print("text:", text)
     input_vector = []
     original_text = []
     entities_text = []
@@ -89,7 +88,6 @@ def readData(text):
         text_json = json.loads(line)
         sub_original_text = text_json.get('originalText')
         sub_entities_text = text_json.get('entities')
-        print("sub_original_text:", sub_original_text)
         # pattern = re.compile(r'[^\u4e00-\u9fa5]')
         # sub_original_text = re.sub(pattern, '', sub_original_text)
         key_list = []
@@ -142,7 +140,7 @@ def readData(text):
 
         # char_entities_labels = torch.LongTensor(char_entities_labels)
         entities_labels_final.extend(char_entities_labels)
-        print("entities_labels_final:", entities_labels_final)
+
         start_word = []
         end_word = []
         for start_index in char_entities_starts:
@@ -150,7 +148,7 @@ def readData(text):
             start_word.append(sub_original_dict[start_index])
         for end_index in char_entities_ends:
             end_word.append(sub_original_dict[end_index - 1])
-        print("start_word:", start_word)
+
         # print("end_word:", end_word)
         # print("sub_num_labels:", sub_num_labels)
         # print(len(char_entities_labels))
@@ -163,10 +161,10 @@ def readData(text):
         entities_ends_final.append(char_entities_ends)
 
     print("sum_words:", sum_words)
-    print("entities_starts_final:", entities_starts_final)
+    # print("entities_starts_final:", entities_starts_final)
     print("labels_dict:", labels_dict)
     print("start_end_word_len:", start_end_word_len)
-    print("input_vector:", input_vector)
+    # print("input_vector:", input_vector)
     print("label_list:", label_list)
     print("sum_len:", sum_len)
     print("min_len:", min_line_len)
@@ -225,3 +223,4 @@ if __name__ == '__main__':
     labels_predicted = output.data.max(1, keepdim=True)[1]
     print('->', [num_dict[n.item()] for n in labels_predicted.squeeze()])
     print("labels_predicted:", labels_predicted.data)
+
