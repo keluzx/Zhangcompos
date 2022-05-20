@@ -1,11 +1,11 @@
-import reimport reimport reimport re
+import reimport reimport reimport reimport time
 import torch
 import jieba
 import json
 import codecs
 import numpy as np
 import torch.nn as nn
-from torch.nn.utils.rnn import pad_sequence
+from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 
 # device = torch.device(('cuda:7') if torch.cuda.is_available() else 'cpu')
 # torch.cuda.empty_cache()
@@ -19,8 +19,8 @@ To do:
     padding 
 '''
 
-epochs = 1000
-padding_len = 1500
+epochs = 1
+# padding_len = 1500
 embedding_size = 128
 num_embeddings = 1500
 hidden_size = 128
@@ -53,17 +53,19 @@ class RNNMedNER(nn.Module):
 
 
 def max_len(text):
-    # print("text:", text)
+    sub_line_start_end_len = []
     max_labels_len = 0
     sum_labels_len = 0
     for line in text:
         text_json = json.loads(line)
         sub_entities_text = text_json.get('entities')
+        sub_line_start_end_len.append(len(sub_entities_text))
         sum_labels_len += len(sub_entities_text)
         if len(sub_entities_text) > max_labels_len:
             max_labels_len = len(sub_entities_text)
     print("sum_labels_len:", sum_labels_len)
-    return max_labels_len, sum_labels_len
+    print("sub_line_start_end_len:", sub_line_start_end_len)
+    return max_labels_len, sum_labels_len, sub_line_start_end_len
 
 
 def readData(text):
@@ -96,7 +98,7 @@ def readData(text):
             sum_words += 1
             key_list.append(i)
             value_list.append(w)
-        print('key_list:', key_list)
+        # print('key_list:', key_list)
 
         sub_original_dict = dict(zip(key_list, value_list))
         print("key_list_len:", len(key_list))
@@ -181,24 +183,28 @@ if __name__ == '__main__':
     content = []
     with codecs.open('data/subtask1_train/subtask1_training_part1.txt',
                      encoding='utf_8_sig', mode='rU') as f:
-        max_labels_length, sum_labels_len = max_len(f)
+        max_labels_length, sum_labels_len, sub_line_start_end_len = max_len(f)
 
     with codecs.open('data/subtask1_train/subtask1_training_part1.txt',
                      encoding='utf_8_sig', mode='rU') as f:
         input_batch, labels_starts, labels_ends, labels_labels, labels_dict,\
         num_dict, max_line_len, sum_words = readData(f)
 
+    # labels_starts = torch.LongTensor(labels_starts)
+    # labels_ends = torch.LongTensor(labels_ends)
     labels_labels = torch.LongTensor(labels_labels)
     input_batch = pad_sequence(input_batch, batch_first=True)
     labels_starts = pad_sequence(labels_starts, batch_first=True)
     labels_ends = pad_sequence(labels_ends, batch_first=True)
-    # labels_labels = torch.LongTensor(labels_labels).flatten()
-    print("labels_labels_model:", labels_labels)
-    print('if_input_batch_size:', input_batch.size())
+    print("labels_starts:", labels_starts)
+    labels_starts = pack_padded_sequence(labels_starts, sub_line_start_end_len, enforce_sorted=False, batch_first=True)
+    print("labels_starts_pack:", labels_starts)
+
+    # print("labels_labels_model:", labels_labels)
     n_class = len(labels_dict)
 
     print("input_batch_first:", input_batch.size())
-    print("labels_starts_size:", labels_starts.size())
+    print("labels_starts_size:", labels_starts)
     print("labels_ends_size:", labels_ends.size())
 
     model = RNNMedNER()
@@ -207,6 +213,7 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=2e-3)
 
+    start_time = time.time()
     for epoch in range(epochs):
         optimizer.zero_grad()
 
@@ -220,7 +227,10 @@ if __name__ == '__main__':
 
         optimizer.step()
 
+    run_time = time.time() - start_time
+    print("run_time:", run_time)
     labels_predicted = output.data.max(1, keepdim=True)[1]
     print('->', [num_dict[n.item()] for n in labels_predicted.squeeze()])
-    print("labels_predicted:", labels_predicted.data)
+    # print("labels_predicted:", labels_predicted.data)
+
 
