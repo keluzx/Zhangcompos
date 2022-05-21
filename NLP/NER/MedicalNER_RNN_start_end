@@ -54,7 +54,7 @@ class RNNMedNER(nn.Module):
 
 
 def max_len(text):
-    key_list, key_list_char = [], []
+    key_list = []
     sub_line_start_end_len = []
     max_labels_len = 0
     sum_labels_len = 0
@@ -64,14 +64,13 @@ def max_len(text):
         sub_entities_text = text_json.get('entities')
         sub_line_start_end_len.append(len(sub_entities_text))
         sum_labels_len += len(sub_entities_text)
-
+        key_list_char = []
         for i, w in enumerate(sub_original_text):
             key_list_char.append([i])
-        key_list.append(key_list_char)
+        key_list.append(torch.LongTensor(key_list_char))
         if len(sub_entities_text) > max_labels_len:
             max_labels_len = len(sub_entities_text)
-        print("key_list_char:", key_list_char)
-
+        # print("key_list_char:", key_list_char)
     print("key_list_first:", key_list)
     print("sum_labels_len:", sum_labels_len)
     print("sub_line_start_end_len:", sub_line_start_end_len)
@@ -201,7 +200,7 @@ if __name__ == '__main__':
     content = []
     with codecs.open('data/subtask1_train/demo.txt',
                      encoding='utf_8_sig', mode='rU') as f:
-        max_labels_length, sum_labels_len, sub_line_start_end_len, key_list_char = max_len(f)
+        max_labels_length, sum_labels_len, sub_line_start_end_len, key_list_char_line = max_len(f)
 
     with codecs.open('data/subtask1_train/demo.txt',
                      encoding='utf_8_sig', mode='rU') as f:
@@ -210,8 +209,10 @@ if __name__ == '__main__':
         entities_ends_use, sub_line_length = readData(f)
 
     sub_line_start_end_len = torch.FloatTensor(sub_line_start_end_len)
-    key_list_char = torch.FloatTensor(key_list_char)
-    input_batch_char = pad_sequence(key_list_char, batch_first=True)
+    # key_list_char_line = torch.FloatTensor(key_list_char_line)
+
+    input_batch_char = pad_sequence(key_list_char_line, batch_first=True)
+
     # entities_starts_use = pad_sequence(entities_starts_use, batch_first=True)
     # entities_ends_use = pad_sequence(entities_ends_use, batch_first=True)
 
@@ -220,10 +221,11 @@ if __name__ == '__main__':
     #                                            batch_first=True)
     # entities_ends_use = pack_padded_sequence(entities_ends_use, sub_line_start_end_len, enforce_sorted=False,
     #                                          batch_first=True)
+    # print('if_input_batch_size:', key_list_char_line)
     print("input_batch_model:", input_batch_start_end)
     print("labels_starts:", labels_starts)
     print("entities_starts_use_model:", entities_starts_use)
-    # print('if_input_batch_size:', input_batch.size())
+
     n_class = len(labels_dict)
 
     # print("labels_starts_size:", labels_starts.data)
@@ -255,4 +257,3 @@ if __name__ == '__main__':
     labels_predicted = output.data.max(1, keepdim=True)[1]
     print('->', [num_dict[n.item()] for n in labels_predicted.squeeze()])
     print("labels_predicted:", labels_predicted.data)
-
