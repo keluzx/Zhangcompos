@@ -1,0 +1,220 @@
+import re
+import time
+
+import torch
+import jieba
+import json
+import codecs
+import numpy as np
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence
+
+# device = torch.device(('cuda:7') if torch.cuda.is_available() else 'cpu')
+# torch.cuda.empty_cache()
+
+'''
+To do:
+    寻找line最长长度与最短长度
+    应当是每一个line都对应一个独自的字典
+    original_text 每一个字符在字典中的索引 
+    将padding设置为mask
+    padding 
+'''
+
+epochs = 500
+embedding_size = 128
+hidden_size = 128
+num_layers = 1
+padding_len = 800
+out_channels = 8
+n_heads = 2
+
+
+# label_class = ['疾病和诊断', '检查', '检验', '手术', '药物', '解剖部位']
+
+
+class RNNMedNER(nn.Module):
+    def __init__(self):
+        super(RNNMedNER, self).__init__()
+        self.emb = nn.Embedding(num_embeddings=max_line_len, embedding_dim=embedding_size)
+        # self.conv2d = nn.Conv2d(1, 3, kernel_size=(1, max_line_len))
+        self.fc_labels_fir = nn.Linear(out_channels * padding_len, sum_labels_len)
+        self.fc_labels_sec = nn.Linear(num_batch, n_class)
+
+    def forward(self, input_batch):
+        # print('input_batch_size:', input_batch)
+        output_emb = self.emb(input_batch)
+        output_emb = output_emb.unsqueeze(1)
+        # print('output_emb:', output_emb.size())
+        conv2d = nn.Conv2d(1, out_channels, kernel_size=(1, 64))
+        mp = nn.MaxPool2d((1, 65))
+        output = F.softmax(conv2d(output_emb))
+        # print("output_value:", output.size())
+        # print("output_value:", output)
+        output = mp(output)
+
+        output = output.view(out_channels * padding_len, num_batch)
+        # print('outPut_size_first:', output.size())
+        output_labels = self.fc_labels_fir(output.transpose(0, 1))
+        # print('output_labels:', output_labels.size())
+        output_labels = self.fc_labels_sec(output_labels.transpose(0, 1))
+        # print('output_labels:', output_labels.size())
+
+        return output_labels
+
+
+def max_len(text):
+    sub_line_start_end_len = []
+    max_labels_len = 0
+    sum_labels_len = 0
+    for line in text:
+        text_json = json.loads(line)
+        # sub_original_text = text_json.get('originalText')
+        sub_entities_text = text_json.get('entities')
+        sub_line_start_end_len.append(len(sub_entities_text))
+        sum_labels_len += len(sub_entities_text)
+        if len(sub_entities_text) > max_labels_len:
+            max_labels_len = len(sub_entities_text)
+    print("sum_labels_len:", sum_labels_len)
+    print("sub_line_start_end_len:", sub_line_start_end_len)
+    return max_labels_len, sum_labels_len, sub_line_start_end_len
+
+
+def readData(text):
+    global num_dict, labels_dict
+    input_vector = []
+    original_text = []
+    entities_text = []
+    label_list = []
+    entities_labels_final = []
+    num_batch = 0
+    sum_len, sum_words = 0, 0
+    max_line_len, start_end_word_len = 0, 0
+    min_line_len = 200
+    sub_line_length = []
+
+    for line in text:
+        num_batch += 1
+        text_json = json.loads(line)
+        sub_original_text = text_json.get('originalText')
+        sub_entities_text = text_json.get('entities')
+        # pattern = re.compile(r'[^\u4e00-\u9fa5]')
+        # sub_original_text = re.sub(pattern, '', sub_original_text)
+        key_list = []
+        value_list = []
+        for i, w in enumerate(sub_original_text):
+            sum_words += 1
+            key_list.append(i)
+            value_list.append(w)
+
+        while len(key_list) < padding_len:
+            key_list.append(0)
+        while len(key_list) > padding_len:
+            key_list = key_list[0:padding_len - 1]
+        # print('key_list:', key_list)
+        sub_original_dict = dict(zip(key_list, value_list))
+        sub_line_length.append(len(key_list))
+        key_list = torch.LongTensor(key_list)
+        input_vector.append(key_list)
+        # print('input_vector_size:', input_vector)
+        if len(sub_original_text) > max_line_len:
+            max_line_len = len(sub_original_text)
+        if len(sub_original_text) < min_line_len:
+            min_line_len = len(sub_original_text)
+        sum_len += len(sub_original_text)
+
+        original_text.append(sub_original_text)
+        entities_text.append(sub_entities_text)
+
+        char_entities_labels = []
+        sub_num_labels = 0
+
+        # 共400个sub_entities_text
+        for char_entities_text in sub_entities_text:
+            sub_num_labels += 1
+            char_entities_label = char_entities_text.get('label_type')
+
+            if char_entities_label not in label_list:
+                label_list.append(char_entities_label)
+
+            labels_dict = {w: i for i, w in enumerate(label_list)}
+            num_dict = {i: w for i, w in enumerate(label_list)}
+            sub_char_entities_label = labels_dict.get(char_entities_label)
+
+            char_entities_labels.append(sub_char_entities_label)
+
+        entities_labels_final.extend(char_entities_labels)
+
+    # print("sub_line_length:", sub_line_length)
+    print("sum_words:", sum_words)
+    # print("entities_starts_use:", entities_starts_use)
+    # print("labels_dict:", labels_dict)
+    # print("start_end_word_len:", start_end_word_len)
+    print("input_vector:", len(input_vector))
+    print("label_list:", label_list)
+    print("sum_len:", sum_len)
+    print("min_len:", min_line_len)
+    print("max_line_len:", max_line_len)
+    print("num_batch:", num_batch)
+
+    return input_vector, entities_labels_final, labels_dict, num_dict, max_line_len, sum_words,\
+           sub_line_length, num_batch
+
+
+if __name__ == '__main__':
+    content = []
+    with codecs.open('data/subtask1_train/subtask1_training_part1.txt',
+                     encoding='utf_8_sig', mode='rU') as f:
+        max_labels_length, sum_labels_len, sub_line_start_end_len = max_len(f)
+
+    with codecs.open('data/subtask1_train/subtask1_training_part1.txt',
+                     encoding='utf_8_sig', mode='rU') as f:
+        input_batch, labels_labels, labels_dict, num_dict, max_line_len, sum_words,\
+        sub_line_length, num_batch = readData(f)
+
+    labels_labels = torch.LongTensor(labels_labels)
+    input_batch = pad_sequence(input_batch, batch_first=True)
+    print("input_batch_new:", input_batch)
+    n_class = len(labels_dict)
+
+    model = RNNMedNER()
+    total = sum([param.nelement() for param in model.parameters()])
+    print("Number of parameter: %.2fM" % (total / 1e6))
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=2e-3)
+    print("labels_labels:", labels_labels.size())
+    start_time = time.time()
+    for epoch in range(epochs):
+        optimizer.zero_grad()
+
+        # hidden = torch.zeros(num_layers, max_line_len, hidden_size)
+        # print("input_batch:", input_batch)
+        output = model(input_batch)
+        # print('model_output_size:', output.size())
+        loss_labels = criterion(output, labels_labels)
+        print("Epoch:", epoch + 1, '\t'"loss_labels:", loss_labels.item())
+
+        loss_labels.backward()
+
+        optimizer.step()
+
+    run_time = time.time() - start_time
+    print("run_time:", run_time)
+    labels_predicted = output.data.max(1, keepdim=True)[1]
+    print('->', [num_dict[n.item()] for n in labels_predicted.squeeze()])
+    print("labels_predicted:", labels_predicted.data)
+
+
+def evaluate():
+    correct_predicted = 0
+    for i in range(len(labels_predicted)):
+        if labels_labels[i].item() == labels_predicted[i].item():
+            correct_predicted += 1
+
+    recall = correct_predicted / len(labels_labels)
+
+    print("recall:", recall)
+
+
+evaluate()
