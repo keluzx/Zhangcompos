@@ -4,6 +4,8 @@ from torch import nn, optim
 from torchcrf import CRF
 from transformers import RobertaModel
 
+device = torch.device("cuda:1")
+
 
 class LstmNerModel(nn.Module):
     def __init__(self, embedding_size=256, num_tags=41,
@@ -26,17 +28,29 @@ class LstmNerModel(nn.Module):
         self.crf = CRF(num_tags, batch_first=True)
 
     def forward(self, input_tensor, seq_lens):
+        # print("seq_lens:", seq_lens)
         input_tensor = self.embedding(input_tensor)
+        # print("input_tensor:", input_tensor.size())
+
         total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
+        # print("total_length:", total_length)
         input_packed = pack_padded_sequence(input_tensor, seq_lens, batch_first=self.batch_first, enforce_sorted=False)
+        # print("input_packed:", input_packed.data.size())
         output_lstm, hidden = self.lstm(input_packed)
-        output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first, total_length=total_length)
+        # print("True")
+        # print(output_lstm.size())
+        output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
+                                                  total_length=total_length)
         output_fc = self.fc(output_lstm)
+        # print("output_fc:", output_fc.size())
         return output_fc
 
     def compute_loss(self, input_tensor, tags, seq_lens):
         mask = torch.zeros(input_tensor.shape[:2])
-        mask = torch.greater(input_tensor, mask).type(torch.ByteTensor)
+        mask = mask.to(device)
+        mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
+        # print("mask_shape_1:", mask)
+
         output_fc = self.forward(input_tensor, seq_lens)
 
         loss = -self.crf(output_fc, tags, mask, reduction='mean')
@@ -45,7 +59,9 @@ class LstmNerModel(nn.Module):
     def decode(self, input_tensor, seq_lens):
         out = self.forward(input_tensor, seq_lens)
         mask = torch.zeros(input_tensor.shape[:2])
-        mask = torch.greater(input_tensor, mask).type(torch.ByteTensor)
+        mask = mask.to(device)
+        mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
+
         predicted_index = self.crf.decode(out, mask)
         return predicted_index
 
@@ -74,15 +90,15 @@ class BertNerModel(nn.Module):
         mask = torch.zeros(input_tensor.shape[:2])
         # print("mask_shape:", mask)  # [2, 50]
         if torch.cuda.is_available():
-            mask = mask.to('cuda')
+            mask = mask.to('cuda:2')
             mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
-            print("mask_shape_1:", mask)
+            # print("mask_shape_1:", mask)
         else:
             mask = torch.greater(input_tensor, mask).type(torch.ByteTensor)
 
         output = self.forward(input_tensor)
-        print('output_size:', output.size())
-        print("tags:", tags)
+        # print('output_size:', output.size())
+        # print("tags:", tags)
         # output - bert的输出
         # tags - 每一个字符对应的BIESO标签
         # mask - 标记每一个位置上的字符是否为填补字符
@@ -90,13 +106,12 @@ class BertNerModel(nn.Module):
         # print("loss of batch_size:", loss.item())
         return loss
 
-
     def decode(self, input_tensor):
-        print("decode")
+        # print("decode")
         out = self.forward(input_tensor)
         mask = torch.zeros(input_tensor.shape[:2])
         if torch.cuda.is_available():
-            mask = mask.to('cuda')
+            mask = mask.to('cuda:2')
             mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
         else:
             mask = torch.greater(input_tensor, mask).type(torch.ByteTensor)
@@ -122,7 +137,7 @@ class BertLSTMNerModel(nn.Module):
         self.crf = CRF(num_tags, batch_first=True)
 
     def forward(self, input_tensor):
-        print('size_size:', input_tensor.size())
+        # print('size_size:', input_tensor.size())
         hidden_state = torch.zeros(self.num_layers * 2, input_tensor.size(1), 128)
         cell_state = torch.zeros(self.num_layers * 2, input_tensor.size(1), 128)
         if torch.cuda.is_available():
@@ -130,11 +145,11 @@ class BertLSTMNerModel(nn.Module):
             cell_state = cell_state.to('cuda')
         # print("input_tensor_before:", input_tensor.size())
         input_tensor = self.model(input_tensor)
-        print("input_tensor_after:", input_tensor.last_hidden_state.size())
+        # print("input_tensor_after:", input_tensor.last_hidden_state.size())
         input_tensor, (_, _) = self.lstm(input_tensor.last_hidden_state, (hidden_state, cell_state))
-        print('lstm:', input_tensor.size())
+        # print('lstm:', input_tensor.size())
         input_tensor = self.fc(input_tensor)
-        print("input_tensor_final:", input_tensor.size())
+        # print("input_tensor_final:", input_tensor.size())
         return input_tensor
 
     def compute_loss(self, input_tensor, tags):
@@ -144,13 +159,13 @@ class BertLSTMNerModel(nn.Module):
         if torch.cuda.is_available():
             mask = mask.to('cuda')
             mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
-            print("mask_shape_1:", mask)
+            # print("mask_shape_1:", mask)
         else:
             mask = torch.greater(input_tensor, mask).type(torch.ByteTensor)
 
         output = self.forward(input_tensor)
-        print('output_size:', output.size())
-        print("tags:", tags)
+        # print('output_size:', output.size())
+        # print("tags:", tags)
         # output - bert的输出
         # tags - 每一个字符对应的BIESO标签
         # mask - 标记每一个位置上的字符是否为填补字符
@@ -159,7 +174,7 @@ class BertLSTMNerModel(nn.Module):
         return loss
 
     def decode(self, input_tensor):
-        print("decode")
+        # print("decode")
         out = self.forward(input_tensor)
         mask = torch.zeros(input_tensor.shape[:2])
         if torch.cuda.is_available():
@@ -169,6 +184,6 @@ class BertLSTMNerModel(nn.Module):
             mask = torch.greater(input_tensor, mask).type(torch.ByteTensor)
 
         predicted_index = self.crf.decode(out, mask)
-        print('predicted_index:', predicted_index)
+        # print('predicted_index:', predicted_index)
         return predicted_index
 
