@@ -2,12 +2,15 @@
 使用了bert+lstm+crf模型。
 简化起见，仅使用了bert的vocab，tokenize还是一个个字符。但是效果macro-f1 只能达到0.64
 '''
-
+import torch.cuda
 from DATA import *
 from model import BertNerModel
 import collections
+import time
 from transformers import AutoTokenizer
 from lstm_ner import decode_prediction
+
+device = torch.device("cuda:2")
 
 tokenizer = AutoTokenizer.from_pretrained("hfl/chinese-roberta-wwm-ext")
 vocab = tokenizer.get_vocab()
@@ -20,8 +23,11 @@ eval_dataloader = train_dev_data.eval_dataloader
 
 vocab_size = train_dev_data.vocab_size
 num_tags = train_dev_data.num_tags
-lr = 2e-5
+lr = 3e-5
 hidden_size = 128
+
+# if torch.cuda.is_available():
+#     device =
 
 model = BertNerModel(num_tags=num_tags)
 
@@ -40,11 +46,11 @@ def eval(model=model, eval_dataloader=eval_dataloader):
     model.eval()
     result = {}
     for index, (input_tensor, true_tags, seq_lens) in enumerate(eval_dataloader):
-        if torch.cuda.is_available():
-            input_tensor = input_tensor.cuda()
+        input_tensor = input_tensor.to(device)
         predict_tags = model.decode(input_tensor)
         true_tags = list(true_tags.numpy())
         input_tensor = list(input_tensor.cpu().numpy())
+
         for pre, true, input in zip(predict_tags, true_tags, input_tensor):
             pre = [id2tag[t] for t in pre]
             true = [id2tag[t] for t in true]
@@ -74,6 +80,7 @@ def eval(model=model, eval_dataloader=eval_dataloader):
         result[type].append(round(recall, 3))
         result[type].append(round(f1, 3))
     result = [(k, v) for k, v in result.items()]
+    print("result:", result)
     macro_f1 = sum([v[1][-1] for v in result]) / len(result)
     print("macrof1 {}".format(macro_f1))
     result.sort()
@@ -81,19 +88,19 @@ def eval(model=model, eval_dataloader=eval_dataloader):
     return result
 
 
-def train(model=model, train_loader=train_dataloader, optimizer=optimizer, scheduler=scheduler, epoch=10):
+def train(model=model, train_loader=train_dataloader, optimizer=optimizer, scheduler=scheduler, epoch=100):
+    start_time = time.time()
     model.train()
-    if torch.cuda.is_available():
-        model = model.cuda()
+    model = model.to(device)
     for i in range(epoch):
         epoch_loss = 0
         epoch_count = 0
         before = -1
         for index, (input_tensor, tags, seq_lens) in enumerate(train_loader):
-            print("index:", index)
-            if torch.cuda.is_available():
-                input_tensor = input_tensor.cuda()
-                tags = tags.cuda()
+            # print("index:", index)
+            input_tensor = input_tensor.to(device)
+            tags = tags.to(device)
+
             loss = model.compute_loss(input_tensor, tags)
             optimizer.zero_grad()
             loss.backward()
@@ -102,16 +109,19 @@ def train(model=model, train_loader=train_dataloader, optimizer=optimizer, sched
             epoch_loss += loss.item()
             epoch_count += input_tensor.shape[0]
 
-            if index % 100 == 0:
-                print(index, 'Total Loss:', round(epoch_loss / epoch_count, 3))
-                cur = epoch_loss / epoch_count
-                if cur < 0.2 and (before - cur) / before > 0.01:
-                    result = eval(model, eval_dataloader)
-                    print(i, "index:", index, result)
-                if cur < before:
-                    before = cur
+            # if index % 100 == 0:
+            print('Epoch:', i, 'index:', index, 'Total Loss:', round(epoch_loss / epoch_count, 3))
+            cur = epoch_loss / epoch_count
+            print("cur:", cur, (before - cur) / before)
+            # if cur < 5.0 and (before - cur) / before > 2:
+            result = eval(model, eval_dataloader)
+            print('Epoch:', i+1, "index:", index, result)
+            if cur < before:
+                before = cur
 
         scheduler.step()
+    run_time = time.time() - start_time
+    print("run_time:", run_time)
 
 
 if __name__ == '__main__':
