@@ -1,9 +1,11 @@
 '''
 lstm+crf，训练得到的最好macro-f1是0.686。
 '''
-from DATA import *
+from DATA_LSTM import *
 from model import LstmNerModel
 import collections
+
+device = torch.device("cuda:1")
 
 train_dev_data = TrainDevData()
 id2tag = train_dev_data.id2tag
@@ -17,7 +19,8 @@ lr = 0.001
 embedding_size = 256
 hidden_size = 128
 
-model = LstmNerModel(embedding_size=embedding_size, hidden_size=hidden_size, vocab_size=vocab_size, num_tags=num_tags)
+model = LstmNerModel(embedding_size=embedding_size, hidden_size=hidden_size,
+                     vocab_size=vocab_size, num_tags=num_tags)
 
 params = [{"params": [], 'lr': lr}, {'params': [], 'lr': 100 * lr}]
 for p in model.named_parameters():
@@ -33,6 +36,7 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.9)
 def decode_prediction(chars, tags):
     assert len(chars) == len(tags), "{}{}".format(chars, tags)
     result = collections.defaultdict(set)
+    # print("result_original:", result)
     entity = ''
     type1 = ''
     for char, tag in zip(chars, tags):
@@ -66,26 +70,32 @@ def decode_prediction(chars, tags):
                     result[type1].add(entity)
                 entity = ''
                 type1 = ''
-
+            # print("result_E:", result)
         else:
+            # print('O_entity:', entity)
             if entity:
                 if type1 != '':
                     result[type1].add(entity)
+            # print("result_O:", result)
             entity = ''
     if entity:
+        # print('Other_entity:', entity)
         if type1 != '':
             result[type1].add(entity)
+    # print("result_decode:", result)
     return result
 
 
 def eval(model=model, eval_dataloader=eval_dataloader):
     model.eval()
-    result = {}
     for index, (input_tensor, true_tags, seq_lens) in enumerate(eval_dataloader):
+        input_tensor = input_tensor.to(device)
+        result = {}
         predict_tags = model.decode(input_tensor, seq_lens)
         true_tags = list(true_tags.numpy())
-        input_tensor = list(input_tensor.numpy())
+        input_tensor = list(input_tensor.cpu().numpy())
         for pre, true, input in zip(predict_tags, true_tags, input_tensor):
+
             pre = [id2tag[t] for t in pre]
             true = [id2tag[t] for t in true]
             chars = [id2char[c] for c in input if c != 0]
@@ -114,20 +124,22 @@ def eval(model=model, eval_dataloader=eval_dataloader):
         result[type].append(round(recall, 3))
         result[type].append(round(f1, 3))
     result = [(k, v) for k, v in result.items()]
-    macro_f1 = sum([v[1][-1] for v in result])/len(result)
+    macro_f1 = sum([v[1][-1] for v in result]) / len(result)
     print("macrof1 {}".format(macro_f1))
     result.sort()
     model.train()
     return result
 
 
-def train(model=model, train_loader=train_dataloader, optimizer=optimizer, scheduler=scheduler, epoch=10):
+def train(model=model, train_loader=train_dataloader, optimizer=optimizer, scheduler=scheduler, epoch=200):
     model.train()
+    model = model.to(device)
     for i in range(epoch):
         epoch_loss = 0
         epoch_count = 0
         before = -1
         for index, (input_tensor, tags, seq_lens) in enumerate(train_loader):
+            input_tensor = input_tensor.to(device)
             loss = model.compute_loss(input_tensor, tags, seq_lens)
             optimizer.zero_grad()
             loss.backward()
@@ -137,11 +149,11 @@ def train(model=model, train_loader=train_dataloader, optimizer=optimizer, sched
             epoch_count += input_tensor.shape[0]
 
             if index % 100 == 0:
-                print(round(epoch_loss / epoch_count, 3))
+                # print(round(epoch_loss / epoch_count, 3))
                 cur = epoch_loss / epoch_count
                 if cur < 0.2 and (before - cur) / before > 0.01:
                     result = eval(model, eval_dataloader)
-                    print(i, index, result)
+                    print('Epoch:', i, result)
                 if cur < before:
                     before = cur
 
@@ -149,5 +161,4 @@ def train(model=model, train_loader=train_dataloader, optimizer=optimizer, sched
 
 
 if __name__ == '__main__':
-
     train()
