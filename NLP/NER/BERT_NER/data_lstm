@@ -7,23 +7,19 @@ import codecs
 
 class CustomNerDataset(Dataset):
     # 首先构造训练集的字典与标签
-    def __init__(self, file_path='data/subtask1_train/demo.txt', vocab=None, tags=None):
-        # print("vocab_CustomNerDataset:", vocab)
+    def __init__(self, file_path='data/subtask1_train/subtask1_training_part1.txt', vocab=None, tags=None):
         self.data = []
         self.PAD = "[PAD]"
         self.UNK = "[UNK]"
-        self.char_len = 0
+
         if vocab:
             self.char2id = vocab
-            # print("vocal_self_char2id:", self.char2id)
         else:
             self.char2id = {self.PAD: 0, self.UNK: 1}
-
         if tags:
             self.label2id = tags
         else:
             self.label2id = {'O': 0}
-
         for line in codecs.open(file_path, 'r', 'utf_8_sig'):
             line = json.loads(line)
             one_example = []
@@ -46,12 +42,18 @@ class CustomNerDataset(Dataset):
                 char_label = k.get('label_type')
                 start_label = k.get('start_pos')
                 end_label = k.get('end_pos')
-                s_e_label = [start_label, end_label]
+                s_e_label = [start_label, end_label - 1]
                 start_end_labels.append(s_e_label)
                 labels_list.append(char_label)
             # print("labels_list:", labels_list)
-            # print("start_end_labels:", start_end_labels)
+
+            start_end_dict = {}
+            for i in range(len(start_end_labels)):
+                start_end_dict[i] = start_end_labels[i]
+            # print("start_end_dict:", start_end_dict)
+            temp = 0
             for k in labels_list:
+
                 if not tags:
                     if 'B-' + k not in self.label2id:
                         self.label2id['B-' + k] = len(self.label2id)
@@ -59,35 +61,40 @@ class CustomNerDataset(Dataset):
                         self.label2id['E-' + k] = len(self.label2id)
                         self.label2id['S-' + k] = len(self.label2id)
                 # print("label2id_second:", self.label2id)
-                #
-                for start, end in start_end_labels:
-                    assert start <= end
-                    if start == end:
-                        labels[start] = 'S-' + k
-                    elif start + 1 == end:
-                        labels[start:end + 1] = ['B-' + k, 'E-' + k]
-                    else:
-                        labels[start] = 'B-' + k
-                        for i in range(start + 1, end):
-                            labels[i] = 'I-' + k
-                        labels[end] = 'E-' + k
-
+                start, end = start_end_dict[temp]
+                temp += 1
+                # print("start_end:", start, end)
+                assert start <= end
+                if start == end:
+                    labels[start] = 'S-' + k
+                elif start + 1 == end:
+                    labels[start:end + 1] = ['B-' + k, 'E-' + k]
+                else:
+                    labels[start] = 'B-' + k
+                    for i in range(start + 1, end):
+                        labels[i] = 'I-' + k
+                    labels[end] = 'E-' + k
+            # print("labels_new:", labels)
             one_example.append(labels)
             self.data.append(one_example)
-        # print("data_final:", self.data)
-        # print("one_example:", one_example)
-        # print("char_len:", self.char_len)
 
     # 返回训练集的长度
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
+        '''
+        self.data - [chars, labels]
+        chars - original text
+        labels - entities text
+        :param idx:
+        :return:
+        '''
         chars, labels = self.data[idx]
         # print('labels2id:', self.label2id)
         chars = [self.char2id[c] if c in self.char2id else self.char2id[self.UNK] for c in chars]
         labels = [self.label2id[lbl] for lbl in labels]
-        # print("chars_data_sec:", chars)
+
         return {
             'chars': torch.LongTensor(chars),
             'labels': torch.LongTensor(labels),
@@ -96,8 +103,8 @@ class CustomNerDataset(Dataset):
 
 
 class TrainDevData:
-    def __init__(self, train_path="data/subtask1_train/demo.txt",
-                 dev_path="data/subtask1_train/demo.txt", vocab=None):
+    def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt",
+                 dev_path="data/subtask1_test/subtask1_test_set_with_answer.json", vocab=None):
         # print("vocab_TrainDevData:", vocab)
         self.train_data = CustomNerDataset(train_path, vocab=vocab)
         self.eval_data = CustomNerDataset(dev_path,
@@ -110,10 +117,10 @@ class TrainDevData:
         self.num_tags = len(self.train_data.label2id)
         print('num_tags:', self.num_tags)
         # 加载训练集
-        self.train_dataloader = DataLoader(self.train_data, batch_size=2,
+        self.train_dataloader = DataLoader(self.train_data, batch_size=100,
                                            shuffle=False, collate_fn=self.len_collate_fn)
         # 加载验证集
-        self.eval_dataloader = DataLoader(self.eval_data, batch_size=2, collate_fn=self.len_collate_fn,
+        self.eval_dataloader = DataLoader(self.eval_data, batch_size=10, collate_fn=self.len_collate_fn,
                                           shuffle=False)
 
     def len_collate_fn(self, batch_data):
