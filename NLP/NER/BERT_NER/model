@@ -4,11 +4,11 @@ from torch import nn, optim
 from torchcrf import CRF
 from transformers import RobertaModel
 
-device = torch.device("cuda:1")
+device = torch.device("cuda:2")
 
 
 class LstmNerModel(nn.Module):
-    def __init__(self, embedding_size=256, num_tags=41,
+    def __init__(self, embedding_size=256, num_tags=25,
                  vocab_size=3675, hidden_size=128,
                  batch_first=True, dropout=0.1):
         super(LstmNerModel, self).__init__()
@@ -38,7 +38,7 @@ class LstmNerModel(nn.Module):
         # print("input_packed:", input_packed.data.size())
         output_lstm, hidden = self.lstm(input_packed)
         # print("True")
-        # print(output_lstm.size())
+        #         # print(output_lstm.size())
         output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
                                                   total_length=total_length)
         output_fc = self.fc(output_lstm)
@@ -109,6 +109,7 @@ class BertNerModel(nn.Module):
     def decode(self, input_tensor):
         # print("decode")
         out = self.forward(input_tensor)
+        # print('out:', out)
         mask = torch.zeros(input_tensor.shape[:2])
         if torch.cuda.is_available():
             mask = mask.to('cuda:2')
@@ -117,8 +118,8 @@ class BertNerModel(nn.Module):
             mask = torch.greater(input_tensor, mask).type(torch.ByteTensor)
 
         predicted_index = self.crf.decode(out, mask)
-        print('predicted_index:', predicted_index)
-        # print('predicted_index:', predicted_inde)
+        # print('predicted_index:', predicted_index)
+
         return predicted_index
 
 
