@@ -1,6 +1,8 @@
 '''
 lstm+crf，训练得到的最好macro-f1是0.686。
 '''
+import time
+
 from DATA_LSTM import *
 from model import LstmNerModel
 import collections
@@ -15,7 +17,7 @@ eval_dataloader = train_dev_data.eval_dataloader
 
 vocab_size = train_dev_data.vocab_size
 num_tags = train_dev_data.num_tags
-lr = 0.001
+lr = 0.01
 embedding_size = 256
 hidden_size = 128
 
@@ -36,7 +38,7 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.9)
 def decode_prediction(chars, tags):
     assert len(chars) == len(tags), "{}{}".format(chars, tags)
     result = collections.defaultdict(set)
-    # print("result_original:", result)
+    # print("result_original:", tags)
     entity = ''
     type1 = ''
     for char, tag in zip(chars, tags):
@@ -79,7 +81,6 @@ def decode_prediction(chars, tags):
             # print("result_O:", result)
             entity = ''
     if entity:
-        # print('Other_entity:', entity)
         if type1 != '':
             result[type1].add(entity)
     # print("result_decode:", result)
@@ -88,14 +89,14 @@ def decode_prediction(chars, tags):
 
 def eval(model=model, eval_dataloader=eval_dataloader):
     model.eval()
+    result = {}
     for index, (input_tensor, true_tags, seq_lens) in enumerate(eval_dataloader):
         input_tensor = input_tensor.to(device)
-        result = {}
         predict_tags = model.decode(input_tensor, seq_lens)
         true_tags = list(true_tags.numpy())
         input_tensor = list(input_tensor.cpu().numpy())
-        for pre, true, input in zip(predict_tags, true_tags, input_tensor):
 
+        for pre, true, input in zip(predict_tags, true_tags, input_tensor):
             pre = [id2tag[t] for t in pre]
             true = [id2tag[t] for t in true]
             chars = [id2char[c] for c in input if c != 0]
@@ -125,6 +126,7 @@ def eval(model=model, eval_dataloader=eval_dataloader):
         result[type].append(round(f1, 3))
     result = [(k, v) for k, v in result.items()]
     macro_f1 = sum([v[1][-1] for v in result]) / len(result)
+    print('==' * 5, '验证阶段f1值', '==' * 5)
     print("macrof1 {}".format(macro_f1))
     result.sort()
     model.train()
@@ -134,12 +136,17 @@ def eval(model=model, eval_dataloader=eval_dataloader):
 def train(model=model, train_loader=train_dataloader, optimizer=optimizer, scheduler=scheduler, epoch=200):
     model.train()
     model = model.to(device)
+
+    start_time = time.time()
     for i in range(epoch):
         epoch_loss = 0
         epoch_count = 0
         before = -1
         for index, (input_tensor, tags, seq_lens) in enumerate(train_loader):
+            # index = 数据集总条数 / batch_size
+            # index - 也可以表示模型加载数据集的次数
             input_tensor = input_tensor.to(device)
+            # print("input_tensor_train:", input_tensor.size())
             loss = model.compute_loss(input_tensor, tags, seq_lens)
             optimizer.zero_grad()
             loss.backward()
@@ -148,16 +155,20 @@ def train(model=model, train_loader=train_dataloader, optimizer=optimizer, sched
             epoch_loss += loss.item()
             epoch_count += input_tensor.shape[0]
 
-            if index % 100 == 0:
-                # print(round(epoch_loss / epoch_count, 3))
-                cur = epoch_loss / epoch_count
-                if cur < 0.2 and (before - cur) / before > 0.01:
-                    result = eval(model, eval_dataloader)
-                    print('Epoch:', i, result)
-                if cur < before:
-                    before = cur
+            # if index % 100 == 0:
+            # print(round(epoch_loss / epoch_count, 3))
+            cur = epoch_loss / epoch_count
+            # if cur < 0.2 and (before - cur) / before > 0.01:
+            result = eval(model, eval_dataloader)
+
+            print('Epoch:', i, index, result)
+            if cur < before:
+                before = cur
 
         scheduler.step()
+
+    run_time = time.time() - start_time
+    print("run_time:", run_time)
 
 
 if __name__ == '__main__':
