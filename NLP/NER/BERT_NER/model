@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch import nn, optim
 from torchcrf import CRF
@@ -298,36 +299,38 @@ class LstmCRFAttnModel(nn.Module):
         self.crf = CRF(num_tags, batch_first=True)
 
     def forward(self, input_tensor, seq_lens):
+        # print("input_tensor:", input_tensor)
         input_tensor = self.embedding(input_tensor)
-
         total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
-        # print("total_length:", total_length)
         input_packed = pack_padded_sequence(input_tensor, seq_lens, batch_first=self.batch_first, enforce_sorted=False)
         output_lstm, hidden = self.lstm(input_packed)
         output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
                                                  total_length=total_length)
 
+        # print("output_lstm:", output_lstm.size())
+        # print("final_hidden:", hidden[0].size())
         attn_output = self.attention_net(output_lstm, hidden[0])
         # print("attn_output:", attn_output.size())
-        # print("output_lstm:", output_lstm.size())
         output_fc = self.fc(attn_output)
         # print("output_fc:", output_fc.size())
 
         return output_fc
 
     def attention_net(self, output_lstm, final_hidden):
-        # print('true:', output_lstm.size(0))
-        hidden = final_hidden.view(output_lstm.size(0), 128, -1)
-
+        # print("final_hidden:", final_hidden.size())  # [4, 100, 128]
+        hidden = final_hidden.view(-1, 128, 2)  # hidden 为每一个batch的最后一个字符
+        # print('hidden:', hidden.size())
         attn_weights = torch.bmm(output_lstm, hidden).squeeze(2)  # attn_weights : [batch_size, n_step]
         # print("attn_weights:", attn_weights.size())
-        attn_weights = attn_weights.permute(2, 0, 1)[-1]
-        # print("attn_weights:", attn_weights.size())
+
         soft_attn_weights = F.softmax(attn_weights, 1)
-        context = torch.bmm(output_lstm.transpose(1, 2), soft_attn_weights.unsqueeze(2)).transpose(1, 2)
-        context_final = torch.bmm(soft_attn_weights.unsqueeze(2), context)
-        # print("context:", context_final.size())
-        return context_final
+        # print(soft_attn_weights.size())
+        soft_attn_weights = soft_attn_weights.repeat(1, 1, 64)
+        # print("soft_attn_weights:", soft_attn_weights.size())
+        context = output_lstm + soft_attn_weights
+        # context = torch.bmm(attn_weights, context.transpose(1, 2))
+        # print("context:", context.size())
+        return context
 
     def compute_loss(self, input_tensor, tags, seq_lens):
         mask = torch.zeros(input_tensor.shape[:2])
