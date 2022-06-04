@@ -12,7 +12,7 @@ device_lstm_attn_cnn_crf = torch.device("cuda:2")
 device_lstm_bert_crf = torch.device("cuda:3")
 device_lstm_crf_attn = torch.device("cuda:6")
 device_gru_crf_attn = torch.device("cuda:5")
-device_gru_crf_attn_pos = torch.device("cuda:6")
+device_gru_crf_attn_pos = torch.device("cuda:7")
 
 
 
