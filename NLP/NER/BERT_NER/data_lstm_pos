@@ -116,6 +116,7 @@ class CustomNerDataset(Dataset):
                         continue
 
             one_example_jieba.append(labels_jieba)
+            self.data.append(one_example_jieba)
             print("one_example_jieba:", one_example_jieba)
 
             one_example = []
@@ -169,6 +170,7 @@ class CustomNerDataset(Dataset):
             # print("labels_new:", labels)
             one_example.append(labels)
             self.data.append(one_example)
+            print("data:", self.data)
 
     # 返回训练集的长度
     def __len__(self):
