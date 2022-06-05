@@ -1,182 +1,179 @@
-'''
-lstm+crf，训练得到的最好macro-f1是0.686。
-'''
-import time
-from DATA_LSTM_POS_only import *
-from model import LstmCRFAttnPosOnlyModel
-import collections
-import matplotlib.pyplot as plt
-
-device_lstm_crf_attn_pos_only = torch.device("cuda:4")
-
-train_dev_data = TrainDevData()
-id2tag = train_dev_data.id2tag
-id2char = train_dev_data.id2char
-train_dataloader = train_dev_data.train_dataloader
-eval_dataloader = train_dev_data.eval_dataloader
-
-vocab_size = train_dev_data.vocab_size
-num_tags = train_dev_data.num_tags
-lr = 1e-2
-embedding_size = 256
-hidden_size = 128
+import torch
+from torch.utils.data import DataLoader, Dataset, sampler
+from torch.nn.utils.rnn import pad_sequence
+import json
+import re
+import codecs
+from random import *
+import jieba.posseg as psg
 
 
-model = LstmCRFAttnPosOnlyModel(embedding_size=embedding_size, hidden_size=hidden_size,
-                         vocab_size=vocab_size, num_tags=num_tags)
+class CustomNerDataset(Dataset):
+    # 首先构造训练集的字典与标签
+    def __init__(self, file_path='data/subtask1_train/subtask1_training_part1.txt', vocab=None, tags=None):
+        self.data = []
+        self.PAD = "[PAD]"
+        self.UNK = "[UNK]"
 
-params = [{"params": [], 'lr': lr}, {'params': [], 'lr': 100 * lr}]
-for p in model.named_parameters():
-    if "crf" in p[0]:
-        params[1]['params'].append(p[1])
-    else:
-        params[0]['params'].append(p[1])
-
-optimizer = torch.optim.Adam(params)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.9)
-
-
-def decode_prediction(chars, tags):
-    assert len(chars) == len(tags), "{}{}".format(chars, tags)
-    result = collections.defaultdict(set)
-    # print("result_original:", tags)
-    entity = ''
-    type1 = ''
-    for char, tag in zip(chars, tags):
-        if "S" in tag:
-            if entity:
-                if type1 != '':
-                    result[type1].add(entity)
-            result[tag.split("-")[1]].add(char)
-            type1 = ''
-            entity = ''
-        elif 'B' in tag:
-            if entity:
-                if type1 != '':
-                    result[type1].add(entity)
-            entity = char
-            type1 = tag.split('-')[1]
-        elif 'I' in tag:
-            type2 = tag.split('-')[1]
-            if type1 == type2:
-                entity += char
-            elif type1 == '':
-                entity = ''
-        elif 'E' in tag:
-            type2 = tag.split('-')[1]
-            if entity:
-                if type1 == type2:
-                    entity += char
-                else:
-                    entity += '[ERROR]'
-                if type1 != '':
-                    result[type1].add(entity)
-                entity = ''
-                type1 = ''
-            # print("result_E:", result)
+        if vocab:
+            self.char2id = vocab
         else:
-            if entity:
-                if type1 != '':
-                    result[type1].add(entity)
-            # print("result_O:", result)
-            entity = ''
-    if entity:
-        if type1 != '':
-            result[type1].add(entity)
-    # print("result_decode:", result)
-    return result
+            self.char2id = {self.PAD: 0, self.UNK: 1}
+        if tags:
+            self.label2id = tags
+        else:
+            self.label2id = {'O': 0}
+
+        for line in codecs.open(file_path, 'r', 'utf_8_sig'):
+            char_jieba_list = []
+            one_example_jieba = []
+            line = json.loads(line)
+            original_text = line.get('originalText')
+            entities_text = line.get('entities')
+            labels_list, start_end_labels = [], []
+            for k in entities_text:
+                char_label = k.get('label_type')
+                start_label = k.get('start_pos')
+                end_label = k.get('end_pos')
+                s_e_label = [start_label, end_label - 1]
+                start_end_labels.append(s_e_label)
+                labels_list.append(char_label)
+
+            start_end_dict_jieba = {}
+            for i in range(len(start_end_labels)):
+                start_end_dict_jieba[i] = start_end_labels[i]
+
+            original_text += original_text.strip()
+            original_text_chinese = ''.join(original_text)
+            original_text_pos = psg.lcut(original_text_chinese)
+
+            word_jieba = []
+            word_jieba_demo = []
+            char2id_len = 0
+            for index, (word, word_pos) in enumerate(original_text_pos):
+                if 'n' in word_pos:
+                    for i in word:
+                        word_jieba.append(i)
+                        if i not in self.char2id:
+                            self.char2id[i] = len(self.char2id) + char2id_len
+                else:
+                    char2id_len = len(word)
+                    if random() < 0.9:
+                        for i in word:
+                            word_jieba.append(i)
+                            if i not in self.char2id:
+                                self.char2id[i] = len(self.char2id) + char2id_len
+
+            for i in original_text:
+                word_jieba_demo.append(i)  # word_jieba - 词汇
+
+            for sub_word_jieba in word_jieba_demo:
+                for i in sub_word_jieba:
+                    char_jieba_list.append(i)  # char_jieba_list - 单个字符
+            # print("char_jieba_list:", char_jieba_list)
+            chars_jieba = []
+            for c_jieba in char_jieba_list:
+                chars_jieba.append(c_jieba)
+                if not vocab:
+                    if c_jieba not in self.char2id:
+                        self.char2id[c_jieba] = len(self.char2id)
+            # print('char2id:', self.char2id)
+            one_example_jieba.append(chars_jieba)
+            labels_jieba = ['O'] * len(chars_jieba)
+
+            temp = 0
+            for k in labels_list:
+                if not tags:
+                    if 'B-' + k not in self.label2id:
+                        self.label2id['B-' + k] = len(self.label2id)
+                        self.label2id['I-' + k] = len(self.label2id)
+                        self.label2id['E-' + k] = len(self.label2id)
+                        self.label2id['S-' + k] = len(self.label2id)
+
+                start, end = start_end_dict_jieba[temp]
+                temp += 1
+                assert start <= end
+                if start == end:
+                    try:
+                        labels_jieba[start] = 'S-' + k
+                    except:
+                        continue
+                elif start + 1 == end:
+                    try:
+                        labels_jieba[start:end + 1] = ['B-' + k, 'E-' + k]
+                    except:
+                        continue
+                else:
+                    try:
+                        labels_jieba[start] = 'B-' + k
+                        for i in range(start + 1, end):
+                            labels_jieba[i] = 'I-' + k
+                        labels_jieba[end] = 'E-' + k
+                    except:
+                        continue
+            # print("label2id_second:", self.label2id_jieba)
+            one_example_jieba.append(labels_jieba)
+            # print("selfchar2id_ori:", self.char2id)
+            self.data.append(one_example_jieba)
+            # print("data_final:", self.data)
+
+    # 返回训练集的长度
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        chars, labels = self.data[idx]
+        # print("chars_value:", self.char2id)
+        # print("labelss_value:", labels)
+        chars = [self.char2id[c] if c in self.char2id else self.char2id[self.UNK] for c in chars]
+        labels = [self.label2id[lbl] for lbl in labels]
+        # print("chars_value:", chars)
+        # print("labels_len_ori:", len(labels))
+        # print("chars_len:", len(chars))
+
+        return {
+            'chars': torch.LongTensor(chars),
+            'labels': torch.LongTensor(labels),
+            'len_chars': len(chars)
+        }
 
 
-def eval(model=model, eval_dataloader=eval_dataloader):
-    # print('True')
-    model.eval()
-    result = {}
-    for index, (input_tensor, true_tags, seq_lens) in enumerate(eval_dataloader):
-        # print("true_tags:", true_tags)
-        input_tensor = input_tensor.to(device_lstm_crf_attn_pos_only)
-        predict_tags = model.decode(input_tensor, seq_lens)
-        true_tags = list(true_tags.numpy())
-        input_tensor = list(input_tensor.cpu().numpy())
+class TrainDevData:
+    def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt",
+                 dev_path="data/subtask1_test/subtask1_test_set_with_answer.json", vocab=None):
+        self.train_data = CustomNerDataset(train_path, vocab=vocab)
+        self.eval_data = CustomNerDataset(dev_path,
+                                          vocab=self.train_data.char2id,
+                                          tags=self.train_data.label2id)
 
-        for pre, true, input in zip(predict_tags, true_tags, input_tensor):
-            # print("true:", len(true))
-            # print("pre:", id2tag)
+        self.id2char = {v: k for k, v in self.train_data.char2id.items()}
+        self.id2tag = {v: k for k, v in self.train_data.label2id.items()}
+        self.vocab_size = len(self.train_data.char2id)
+        self.num_tags = len(self.train_data.label2id)
+        print('num_tags:', self.num_tags)
+        # 加载训练集
+        self.train_dataloader = DataLoader(self.train_data, batch_size=80,
+                                           shuffle=False, collate_fn=self.len_collate_fn)
+        # 加载验证集
+        self.eval_dataloader = DataLoader(self.eval_data, batch_size=100, collate_fn=self.len_collate_fn,
+                                          shuffle=False)
 
-            pre = [id2tag[t] for t in pre]
-            true = [id2tag[t] for t in true]
-            chars = [id2char[c] for c in input if c != 0]
-            true = true[:len(chars)]
-            pre_result = decode_prediction(chars, pre)
-            true_result = decode_prediction(chars, true)
-            # print("pre_result:", pre_result)
-            for type, cnt in pre_result.items():
-                if type not in result:
-                    result[type] = [0, 0, 0]
-                result[type][1] += len(cnt)
-                if type in true_result:
-                    result[type][0] += len(pre_result[type] & true_result[type])
-            for type, cnt in true_result.items():
-                if type not in result:
-                    result[type] = [0, 0, 0]
-                result[type][2] += len(cnt)
-    # print("result:", result)
-    for type, (x, y, z) in result.items():
-        X, Y, Z = 1e-10, 1e-10, 1e-10
-        X += x
-        Y += y
-        Z += z
+    def len_collate_fn(self, batch_data):
+        chars, labels, seq_lens = [], [], []
+        for d in batch_data:
+            chars.append(d['chars'])
+            labels.append(d['labels'])
+            seq_lens.append(d['len_chars'])
 
-        f1, precision, recall = 2 * X / (Y + Z), X / Y, X / Z
-        result[type].append(round(precision, 3))
-        result[type].append(round(recall, 3))
-        result[type].append(round(f1, 3))
-    result = [(k, v) for k, v in result.items()]
-    macro_f1 = sum([v[1][-1] for v in result]) / len(result)
-    print('==' * 5, '验证阶段f1值', '==' * 5)
-    print("macrof1 {}".format(macro_f1))
-    result.sort()
-    model.train()
-    return result
-
-
-def train(model=model, train_loader=train_dataloader, optimizer=optimizer, scheduler=scheduler, epoch=1):
-    model.train()
-    model = model.to(device_lstm_crf_attn_pos_only)
-
-    start_time = time.time()
-    for i in range(epoch):
-        epoch_loss = 0
-        epoch_count = 0
-        before = -1
-        for index, (input_tensor, tags, seq_lens) in enumerate(train_loader):
-            # print('True')
-            # index = 数据集总条数 / batch_size
-            # index - 也可以表示模型加载数据集的次数
-            input_tensor = input_tensor.to(device_lstm_crf_attn_pos_only)
-            print("input_tensor_train:", input_tensor.size())
-            loss = model.compute_loss(input_tensor, tags, seq_lens)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            epoch_loss += loss.item()
-            epoch_count += input_tensor.shape[0]
-
-            # if index % 100 == 0:
-            # print(round(epoch_loss / epoch_count, 3))
-            cur = epoch_loss / epoch_count
-            # if cur < 0.2 and (before - cur) / before > 0.01:
-            result = eval(model, eval_dataloader)
-
-            print('Epoch:', i, 'Loss:', round(epoch_loss / epoch_count, 3), result)
-            if cur < before:
-                before = cur
-
-        scheduler.step()
-
-    run_time = time.time() - start_time
-    print("run_time:", run_time)
+        chars = pad_sequence(chars, batch_first=True, padding_value=0)
+        # print("chars:", chars)
+        labels = pad_sequence(labels, batch_first=True, padding_value=0)
+        # print("data_char:", chars.data.size())
+        return chars, labels, torch.LongTensor(seq_lens)
 
 
 if __name__ == '__main__':
-    train()
+    dataset = CustomNerDataset()
+    print(len(dataset.char2id))
+    print(len(dataset.label2id))
+    # print(dataset.data[-1])
