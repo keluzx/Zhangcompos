@@ -17,134 +17,80 @@ class CustomNerDataset(Dataset):
 
         if vocab:
             self.char2id = vocab
-            self.char2id_jieba = vocab
+            # self.char2id_jieba = vocab
         else:
             self.char2id = {self.PAD: 0, self.UNK: 1}
-            self.char2id_jieba = {self.PAD: 0, self.UNK: 1}
+            # self.char2id_jieba = {self.PAD: 0, self.UNK: 1}
         if tags:
             self.label2id = tags
-            self.label2id_jieba = tags
+            # self.label2id_jieba = tags
         else:
             self.label2id = {'O': 0}
-            self.label2id_jieba = {'O': 0}
+            # self.label2id_jieba = {'O': 0}
 
         for line in codecs.open(file_path, 'r', 'utf_8_sig'):
             line = json.loads(line)
             original_text = line.get('originalText')
+            print("original_text:", original_text)
             entities_text = line.get('entities')
-            original_text += original_text.strip()
-
-            original_text_chinese = re.findall('[\u4e00-\u9fa5]', original_text)
-            original_text_chinese = ''.join(original_text_chinese)
-
-            # print("entities_text:", entities_text)
-            original_text_pos = psg.lcut(original_text_chinese)
-            # print("original_text_pos:", original_text_pos)
-            word_jieba = []
-            word_jieba_demo = []
-            for index, (word, word_pos) in enumerate(original_text_pos):
-                # print("tag:", index, word, word_pos)
-                if 'n' in word_pos:
-                    if random() < 0.9:
-                        word_jieba.append(word)
-                if 'n' in word_pos:
-                    word_jieba_demo.append(word)
-            print("word_jieba:", word_jieba)
-            word_jieba_list = []
-            one_example_jieba = []
-            for sub_word_jieba in word_jieba:
-                for i in sub_word_jieba:
-                    word_jieba_list.append(i)
-
-            print("word_jieba_demo:", len(word_jieba_demo))
-            chars_jieba = []
-            for c_jieba in word_jieba_list:
-                chars_jieba.append(c_jieba)
-
-                if not vocab:
-                    if c_jieba not in self.char2id_jieba:
-                        self.char2id_jieba[c_jieba] = len(self.char2id_jieba)
-            one_example_jieba.append(chars_jieba)
-
-            labels_jieba = ['O'] * len(chars_jieba)
-            keys_list_jieba = line.get('entities')
-
-            labels_list_jieba, start_end_labels_jieba = [], []
-            for k in keys_list_jieba:
-                char_label = k.get('label_type')
-                start_label = k.get('start_pos')
-                end_label = k.get('end_pos')
-                s_e_label = [start_label, end_label - 1]
-                start_end_labels_jieba.append(s_e_label)
-                labels_list_jieba.append(char_label)
-            # print("labels_list:", labels_list)
-
-            start_end_dict_jieba = {}
-            for i in range(len(start_end_labels_jieba)):
-                start_end_dict_jieba[i] = start_end_labels_jieba[i]
-            # print("start_end_dict:", start_end_dict)
-            temp = 0
-            for k in labels_list_jieba:
-                if not tags:
-                    if 'B-' + k not in self.label2id_jieba:
-                        self.label2id_jieba['B-' + k] = len(self.label2id_jieba)
-                        self.label2id_jieba['I-' + k] = len(self.label2id_jieba)
-                        self.label2id_jieba['E-' + k] = len(self.label2id_jieba)
-                        self.label2id_jieba['S-' + k] = len(self.label2id_jieba)
-                # print("label2id_second:", self.label2id)
-                start_jieba, end_jieba = start_end_dict_jieba[temp]
-                temp += 1
-                # print("start_end:", start, end)
-                assert start_jieba <= end_jieba
-                if start_jieba == end_jieba:
-                    try:
-                        labels_jieba[start_jieba] = 'S-' + k
-                    except:
-                        continue
-                elif start_jieba + 1 == end_jieba:
-                    try:
-                        labels_jieba[start_jieba:end_jieba + 1] = ['B-' + k, 'E-' + k]
-                    except:
-                        continue
-                else:
-                    try:
-                        labels_jieba[start_jieba] = 'B-' + k
-                        for i in range(end_jieba + 1, end_jieba):
-                            labels_jieba[i] = 'I-' + k
-                        labels_jieba[end_jieba] = 'E-' + k
-                    except:
-                        continue
-
-            one_example_jieba.append(labels_jieba)
-            self.data.append(one_example_jieba)
-            print("one_example_jieba:", one_example_jieba)
-
-            one_example = []
-            chars = []
-            for c in line['originalText']:
-                chars.append(c)
-                if not vocab:
-                    if c not in self.char2id:
-                        self.char2id[c] = len(self.char2id)
-            one_example.append(chars)
-            print("one_example:", one_example)
-            labels = ['O'] * len(chars)
-            keys_list = line.get('entities')
-
             labels_list, start_end_labels = [], []
-            for k in keys_list:
+            for k in entities_text:
+                print("k_index:", k)
                 char_label = k.get('label_type')
                 start_label = k.get('start_pos')
                 end_label = k.get('end_pos')
                 s_e_label = [start_label, end_label - 1]
                 start_end_labels.append(s_e_label)
                 labels_list.append(char_label)
-            # print("labels_list:", labels_list)
+            print("start_end_labels:", start_end_labels)
 
-            start_end_dict = {}
+            start_end_dict_jieba = {}
             for i in range(len(start_end_labels)):
-                start_end_dict[i] = start_end_labels[i]
-            # print("start_end_dict:", start_end_dict)
+                start_end_dict_jieba[i] = start_end_labels[i]
+
+            original_text += original_text.strip()
+
+            original_text_chinese = re.findall('[\u4e00-\u9fa5]', original_text)
+            original_text_chinese = ''.join(original_text_chinese)
+            original_text_pos = psg.lcut(original_text_chinese)
+
+            word_jieba = []
+            word_jieba_demo = []
+            char2id_len = 0
+            for index, (word, word_pos) in enumerate(original_text_pos):
+                if 'n' in word_pos:
+                    for i in word:
+                        word_jieba.append(i)
+                        if i not in self.char2id:
+                            self.char2id[i] = len(self.char2id) + char2id_len
+                else:
+                    char2id_len = len(word)
+                    if random() < 0.9:
+                        for i in word:
+                            word_jieba.append(i)
+                            if i not in self.char2id:
+                                self.char2id[i] = len(self.char2id) + char2id_len
+            print("selfchar2id_ori:", self.char2id)
+            for i in original_text:
+                word_jieba_demo.append(i)  # word_jieba - 词汇
+            print("word_jieba:", word_jieba)
+            print("word_jieba_demo:", word_jieba_demo)
+            char_jieba_list = []
+            one_example_jieba = []
+            for sub_word_jieba in word_jieba_demo:
+                for i in sub_word_jieba:
+                    char_jieba_list.append(i)  # char_jieba_list - 单个字符
+            print("char_jieba_list:", char_jieba_list)
+            chars_jieba = []
+            for c_jieba in char_jieba_list:
+                chars_jieba.append(c_jieba)
+                if not vocab:
+                    if c_jieba not in self.char2id:
+                        self.char2id[c_jieba] = len(self.char2id)
+            print('char2id:', self.char2id)
+            one_example_jieba.append(chars_jieba)
+            labels_jieba = ['O'] * len(chars_jieba)
+
             temp = 0
             for k in labels_list:
                 if not tags:
@@ -153,24 +99,87 @@ class CustomNerDataset(Dataset):
                         self.label2id['I-' + k] = len(self.label2id)
                         self.label2id['E-' + k] = len(self.label2id)
                         self.label2id['S-' + k] = len(self.label2id)
-                # print("label2id_second:", self.label2id)
-                start, end = start_end_dict[temp]
+
+                start, end = start_end_dict_jieba[temp]
                 temp += 1
-                # print("start_end:", start, end)
+                print("start_end:", start, end)
                 assert start <= end
                 if start == end:
-                    labels[start] = 'S-' + k
+                    try:
+                        labels_jieba[start] = 'S-' + k
+                    except:
+                        continue
                 elif start + 1 == end:
-                    labels[start:end + 1] = ['B-' + k, 'E-' + k]
+                    try:
+                        labels_jieba[start:end + 1] = ['B-' + k, 'E-' + k]
+                    except:
+                        continue
                 else:
-                    labels[start] = 'B-' + k
-                    for i in range(start + 1, end):
-                        labels[i] = 'I-' + k
-                    labels[end] = 'E-' + k
-            # print("labels_new:", labels)
-            one_example.append(labels)
-            self.data.append(one_example)
-            print("data:", self.data)
+                    try:
+                        labels_jieba[start] = 'B-' + k
+                        for i in range(end + 1, end):
+                            labels_jieba[i] = 'I-' + k
+                        labels_jieba[end] = 'E-' + k
+                    except:
+                        continue
+            print("labels_jieba:", labels_jieba)
+            # print("label2id_second:", self.label2id_jieba)
+            one_example_jieba.append(labels_jieba)
+            self.data.append(one_example_jieba)
+            # print("one_example_jieba:", one_example_jieba)
+
+            # one_example = []
+            # chars = []
+            # for c in line['originalText']:
+            #     chars.append(c)
+            #     if not vocab:
+            #         if c not in self.char2id:
+            #             self.char2id[c] = len(self.char2id)
+            # one_example.append(chars)
+            # print("one_example:", one_example)
+            # labels = ['O'] * len(chars)
+            # keys_list = line.get('entities')
+            #
+            # labels_list, start_end_labels = [], []
+            # for k in keys_list:
+            #     char_label = k.get('label_type')
+            #     start_label = k.get('start_pos')
+            #     end_label = k.get('end_pos')
+            #     s_e_label = [start_label, end_label - 1]
+            #     start_end_labels.append(s_e_label)
+            #     labels_list.append(char_label)
+            # # print("labels_list:", labels_list)
+
+            # start_end_dict = {}
+            # for i in range(len(start_end_labels)):
+            #     start_end_dict[i] = start_end_labels[i]
+            # # print("start_end_dict:", start_end_dict)
+            # temp = 0
+            # for k in labels_list:
+            #     if not tags:
+            #         if 'B-' + k not in self.label2id:
+            #             self.label2id['B-' + k] = len(self.label2id)
+            #             self.label2id['I-' + k] = len(self.label2id)
+            #             self.label2id['E-' + k] = len(self.label2id)
+            #             self.label2id['S-' + k] = len(self.label2id)
+            #     # print("label2id_second:", self.label2id)
+            #     start, end = start_end_dict[temp]
+            #     temp += 1
+            #     # print("start_end:", start, end)
+            #     assert start <= end
+            #     if start == end:
+            #         labels[start] = 'S-' + k
+            #     elif start + 1 == end:
+            #         labels[start:end + 1] = ['B-' + k, 'E-' + k]
+            #     else:
+            #         labels[start] = 'B-' + k
+            #         for i in range(start + 1, end):
+            #             labels[i] = 'I-' + k
+            #         labels[end] = 'E-' + k
+            # # print("labels_new:", labels)
+            # one_example.append(labels)
+            self.data.append(one_example_jieba)
+            # print("data_final:", self.data)
 
     # 返回训练集的长度
     def __len__(self):
@@ -185,10 +194,21 @@ class CustomNerDataset(Dataset):
         :return:
         '''
         chars, labels = self.data[idx]
-        # print('labels2id:', self.label2id)
+        # print("chars_value:", self.data[idx])
+        # for c in chars:
+        #     print('chars_original:', c)
+        #     print(self.char2id_jieba[c])
+        print("labelss_value:", labels)
         chars = [self.char2id[c] if c in self.char2id else self.char2id[self.UNK] for c in chars]
         labels = [self.label2id[lbl] for lbl in labels]
-
+        print("chars_value:", labels)
+        print("labels_len_ori:", len(labels))
+        print("chars_len:", len(chars))
+        if len(chars) != len(labels):
+            temp = len(labels) - len(chars)
+            print(temp)
+            labels = labels[0: len(labels) - temp]
+        print("labels_len:", len(labels))
         return {
             'chars': torch.LongTensor(chars),
             'labels': torch.LongTensor(labels),
@@ -199,23 +219,22 @@ class CustomNerDataset(Dataset):
 class TrainDevData:
     def __init__(self, train_path="data/subtask1_train/demo.txt",
                  dev_path="data/subtask1_train/demo.txt", vocab=None):
-
         self.train_data = CustomNerDataset(train_path, vocab=vocab)
         self.eval_data = CustomNerDataset(dev_path,
                                           vocab=self.train_data.char2id,
                                           tags=self.train_data.label2id)
 
         self.id2char = {v: k for k, v in self.train_data.char2id.items()}
-        self.id2tag = {v: k for k, v in self.train_data.label2id.items()}
+        self.id2tag = {v: k for k, v in self.train_data.char2id.items()}
         self.vocab_size = len(self.train_data.char2id)
         self.num_tags = len(self.train_data.label2id)
         print('num_tags:', self.num_tags)
         # 加载训练集  # batch_size - 50
         self.train_dataloader = DataLoader(self.train_data, batch_size=100,
-                                           shuffle=True, collate_fn=self.len_collate_fn)
+                                           shuffle=False, collate_fn=self.len_collate_fn)
         # 加载验证集
         self.eval_dataloader = DataLoader(self.eval_data, batch_size=100, collate_fn=self.len_collate_fn,
-                                          shuffle=True)
+                                          shuffle=False)
 
     def len_collate_fn(self, batch_data):
         chars, labels, seq_lens = [], [], []
