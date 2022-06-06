@@ -42,12 +42,12 @@ class LstmCRFModel(nn.Module):
         input_tensor = self.embedding(input_tensor)
 
         total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
-        print('backward')
-        print(input_tensor.size())
+        # print('backward')
+        # print(input_tensor.size())
         input_packed = pack_padded_sequence(input_tensor, seq_lens, batch_first=self.batch_first,
                                             enforce_sorted=False)
-        print('noward')
-        print(input_packed.data.size())
+        # print('noward')
+        # print(input_packed.data.size())
         output_lstm, hidden = self.lstm(input_packed)
         # print("input_packed:", hidden[0].size())
         output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
@@ -450,7 +450,7 @@ class LstmCRFAttnPosAllModel(nn.Module):
 
 class LstmCRFAttnPosOnlyModel(nn.Module):
     def __init__(self, embedding_size=256, num_tags=25,
-                 vocab_size=3675, hidden_size=128,
+                 vocab_size=5000, hidden_size=128,
                  batch_first=True, dropout=0.2):
         super(LstmCRFAttnPosOnlyModel, self).__init__()
         self.batch_first = batch_first
@@ -470,27 +470,28 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
         self.crf = CRF(num_tags, batch_first=True)
 
     def forward(self, input_tensor, seq_lens):
-        # print("input_tensor:", input_tensor)
+        # print("input_tensor_forward:", input_tensor)
+        # print("input_tensor:", input_tensor.size())
         input_tensor = self.embedding(input_tensor)
-        print('forward')
+        # print('forward')
         total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
-        print('backward')
-        print(input_tensor.size())
+        # print('backward')
+        # print(input_tensor.size())
         input_packed = pack_padded_sequence(input_tensor, seq_lens, batch_first=self.batch_first,
                                             enforce_sorted=False)
-        print('noward')
-        print(input_packed.data.size())
+        # print('noward')
+        # print(input_packed.data.size())
         output_lstm, hidden = self.lstm(input_packed)
-        print('yesward')
+        # print('yesward')
         output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
-                                                 total_length=total_length)
+                                                  total_length=total_length)
 
         # print("output_lstm:", output_lstm.size())
         # print("final_hidden:", hidden[0].size())
         attn_output = self.attention_net(output_lstm, hidden[0])
         # print("attn_output:", attn_output.size())
         output_fc = self.fc(attn_output)
-        print("output_fc:")
+        # print("output_fc:")
 
         return output_fc
 
@@ -513,25 +514,26 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
     def compute_loss(self, input_tensor, tags, seq_lens):
         mask = torch.zeros(input_tensor.shape[:2])
         mask = mask.to(device_lstm_crf_attn_pos_only)
-        mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
-        # print("mask_shape_1:", mask)
+        mask = torch.greater(input_tensor, mask)
+        # print("mask_shape_1:", mask)                 .type(torch.cuda.ByteTensor)
         # print("tags:", tags.size())
         output_fc = self.forward(input_tensor, seq_lens)
-
+        print("output_fc:", output_fc.size())
+        print("tags:", tags.size())
         loss = -self.crf(output_fc, tags, mask, reduction='mean')
         # print("loss:", loss)
         return loss
 
     def decode(self, input_tensor, seq_lens):
-        print('true_decode__')
+        # print('true_decode__')
         out = self.forward(input_tensor, seq_lens)
-        print('decode')
+        # print('decode')
         mask = torch.zeros(input_tensor.shape[:2])
-        print('decode_next')
+        # print('decode_next')
         mask = mask.to(device_lstm_crf_attn_pos_only)
 
-        mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
-
+        mask = torch.greater(input_tensor, mask)
+        # .type(torch.cuda.ByteTensor)
         predicted_index = self.crf.decode(out, mask)
         # print("predicted_index:", predicted_index)
         return predicted_index
