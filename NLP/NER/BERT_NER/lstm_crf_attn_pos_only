@@ -141,7 +141,7 @@ def eval(model=model, eval_dataloader=eval_dataloader):
     return result
 
 
-def train(model=model, train_loader=train_dataloader, optimizer=optimizer, scheduler=scheduler, epoch=200):
+def train(model=model, train_loader=train_dataloader, optimizer=optimizer, scheduler=scheduler, epoch=100):
     model.train()
     model = model.to(device_lstm_crf_attn_pos_only)
 
