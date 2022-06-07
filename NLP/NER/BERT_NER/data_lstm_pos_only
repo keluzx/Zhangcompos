@@ -28,6 +28,7 @@ class CustomNerDataset(Dataset):
             self.label2id = {'O': 0}
             self.label2id_new = {'O': 0}
 
+        word_labels = {}
         for line in codecs.open(file_path, 'r', 'utf_8_sig'):
             char_jieba_list = []
             char_jieba_list_1 = []
@@ -41,6 +42,7 @@ class CustomNerDataset(Dataset):
                 i_list.append(i)
                 word_list.append(word)
             char_dict = dict(zip(i_list, word_list))
+            char_dict_another = dict(zip(word_list, i_list))
             # print('char_dict:', char_dict)
             original_text = line.get('originalText')
             entities_text = line.get('entities')
@@ -54,17 +56,18 @@ class CustomNerDataset(Dataset):
                 labels_list.append(char_label)
             # print("labels_list:", len(labels_list))
 
-            start_list, end_list = [], []
+            start_list, end_list, s_e_list = [], [], []
             start_values, end_values = [], []
             for i, j in start_end_labels:
                 start_list.append(i)
                 end_list.append(j)
+                s_e_list.append([i, j])
                 # print("i_index:", i)
                 start_value = char_dict[i]
                 end_value = char_dict[j]
                 start_values.append(start_value)
                 end_values.append(end_value)
-            # print("start_values:", start_values)
+            # print("start_list:", s_e_list)
 
             start_end_dict_jieba = {}
             for i in range(len(start_end_labels)):
@@ -77,25 +80,43 @@ class CustomNerDataset(Dataset):
             char_word, char_pos = [], []
             for i, j in original_text_pos:
                 char_word.append(i)
-            # print("char_word:", char_word)
+            # print("original_text_pos:", original_text_pos)
+            # print("original_text_pos:", char_dict.keys())
+            no_dropped_list = []
+            for i in range(len(char_dict.keys())):
+                for j in s_e_list:
+                    if j[0] <= i <= j[1]:
+                        no_dropped_list.append(i)
+            # print("no_dropped_list:", no_dropped_list)
+            original_pos = []
+            for index, (word, word_pos) in enumerate(original_text_pos):
+                original_pos.append(word_pos)
+                if word_pos not in word_labels:
+                    word_labels[word_pos] = len(word_labels)
+
+            for word, word_pos in original_text_pos:
+                for i in word:
+                    for j in no_dropped_list:
+                        if char_dict_another[i] == j:
+                            word_labels[word_pos] += 1
+
             word_jieba = []
             word_jieba_demo = []
             char_dropped_len = 0
             sum_dropped_len = 0
+
             for index, (word, word_pos) in enumerate(original_text_pos):
                 if 'n' in word_pos:
                     for i in word:
                         word_jieba.append(i)
                         if i not in self.char2id:
                             self.char2id[i] = len(self.char2id) + char_dropped_len
-                elif 'v' and 'a' in word_pos:  # 要丢弃的字符
-                    # print("word_v_a:", word)
-                    # print(start_values, end_values)
-                    if random() < 0.1 and word not in start_values and word not in end_values:
-                        char_dropped_len = len(word)
-                        sum_dropped_len += char_dropped_len
-                        # print("char_dropped_len:", char_dropped_len)
-                        for i in word:
+                elif word_pos:  # 要丢弃的字符  'u' and 'b' and   + 'u' or 'wp' or 'ws' or 'a' in
+                    for i in word:
+                        if random() < 0.1 and char_dict_another[i] not in no_dropped_list:
+                            char_dropped_len = len(word)
+                            sum_dropped_len += char_dropped_len
+                            # print("char_dropped_len:", char_dropped_len)
                             if i not in self.char2id:
                                 self.char2id[i] = len(self.char2id) + char_dropped_len
                     else:
@@ -160,44 +181,30 @@ class CustomNerDataset(Dataset):
                         # labels_jieba.extend(labels_jieba_long[start])
                     elif start + 1 == end:
                         labels_jieba[start:end + 1] = ['B-' + k, 'E-' + k]
-                        # print("labels_jieba_long:", len(labels_jieba_long))
-                        # print("labels_jieba:", len(labels_jieba))
-                        # labels_jieba.extend(labels_jieba_long[start:end + 1])
-                        # print("labels_jieba:", len(labels_jieba))
                     else:
                         labels_jieba[start] = 'B-' + k
-                        # labels_jieba.extend(labels_jieba_long[start])
                         for i in range(start + 1, end):
-                            # print("labels_jieba_if:", labels_jieba)
                             labels_jieba[i] = 'I-' + k
-                            # labels_jieba.extend(labels_jieba_long[i])
-                            # print("labels_jieba_if:", labels_jieba)
                         labels_jieba[end] = 'E-' + k
-                        # labels_jieba.extend(labels_jieba_long[end])
                 else:
-                    print('if_else')
+                    # print('if_else')
                     if start == end:
                         labels_jieba[start-sum_dropped_len] = 'S-' + k
                     elif start + 1 == end:
                         labels_jieba[start-sum_dropped_len:end-sum_dropped_len + 1] = ['B-' + k, 'E-' + k]
-                        # print("labels_jieba:", len(labels_jieba))
                     else:
                         labels_jieba[start-sum_dropped_len] = 'B-' + k
                         for i in range(start + 1, end):
-                            # print("i_index:", i)
-                            # print("labels_jieba_else:", labels_jieba)
                             labels_jieba[i-sum_dropped_len] = 'I-' + k
                             # print("labels_jieba_else:", labels_jieba)
                         labels_jieba[end-sum_dropped_len] = 'E-' + k
-                        # print("labels_jieba_else:", labels_jieba)
-            # print("labels_jieba_long:", len(labels_jieba_long))
-            # print("labels_jieba:", len(labels_jieba))
+
             one_example_jieba.append(labels_jieba)
             # print("one_example_jieba:", one_example_jieba)
             self.data.append(one_example_jieba)
-            # print("data_final_2:", self.data)
+        print("word_labels:", word_labels)
 
-    # 返回训练集的长度
+        # 返回训练集的长度
     def __len__(self):
         return len(self.data)
 
@@ -232,12 +239,16 @@ class TrainDevData:
 
         self.id2char = {v: k for k, v in self.train_data.char2id.items()}
         self.id2tag = {v: k for k, v in self.train_data.label2id.items()}
-        self.vocab_size = len(self.train_data.char2id) + 1000
+        self.vocab_size = len(self.train_data.char2id) + 100
         self.num_tags = len(self.train_data.label2id)
         print('num_tags:', self.num_tags)
         print('id2tag:', self.id2tag)
-        # 加载训练集  # batch_size - 50
-        self.train_dataloader = DataLoader(self.train_data, batch_size=80,
+        # 加载训练集  #
+        '''
+        batch_size:80/10, lr:0.01, char:u,b     F1:0.65
+        batch_size:80/20, lr:0.01, char:u,b,w   F1:0.70
+        '''
+        self.train_dataloader = DataLoader(self.train_data, batch_size=64,
                                            shuffle=True, collate_fn=self.len_collate_fn)
         # 加载验证集
         self.eval_dataloader = DataLoader(self.eval_data, batch_size=10, collate_fn=self.len_collate_fn,
