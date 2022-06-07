@@ -1,6 +1,17 @@
 '''
 lstm+crf，训练得到的最好macro-f1是0.686。
 '''
+
+'''
+batch_size:80/10, random()<0.1, lr:0.01, char:u,b     F1:0.65
+batch_size:80/20, random()<0.1, lr:0.01, char:u,b,w   F1:0.71
+batch_size:80/10, random()<0.1, lr:0.01, char:u,b,w   F1:0.715
+batch_size:80/10, random()<0.2, lr:0.01, char:u,b,w   F1:0.706
+batch_size:80/10, random()<0.4, lr:0.01, char:u,b,w   F1:0.706
+batch_size:80/10, random()<0.8, lr:0.01, char:u,b,w   F1:0.715
+batch_size:50/10, random()<0.8, lr:0.01, char:u,b,w   F1:0.715
+batch_size:100/10, random()<0.8, lr:0.01, char:w,g    F1:0.709
+'''
 import time
 from DATA_LSTM_POS_only import *
 from model import LstmCRFAttnPosOnlyModel
@@ -17,7 +28,7 @@ eval_dataloader = train_dev_data.eval_dataloader
 
 vocab_size = train_dev_data.vocab_size
 num_tags = train_dev_data.num_tags
-lr = 1e-2
+lr = 2e-2
 embedding_size = 256
 hidden_size = 128
 
