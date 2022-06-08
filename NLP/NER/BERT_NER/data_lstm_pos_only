@@ -6,6 +6,8 @@ import re
 import codecs
 from random import *
 import jieba.posseg as psg
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfTransformer
 
 
 class CustomNerDataset(Dataset):
@@ -108,17 +110,16 @@ class CustomNerDataset(Dataset):
 
             for index, (word, word_pos) in enumerate(original_text_pos):
                 if 'n' in word_pos:
-
                     for i in word:
                         word_jieba.append(i)
                         if i not in self.char2id:
                             self.char2id[i] = len(self.char2id) + char_dropped_len
-                elif word_pos:  # 要丢弃的字符  'u' and 'b' and   + 'u' or 'wp' or 'ws' or 'a' in
+                elif 'w' in word_pos:  # 要丢弃的字符  'u' and 'b' and   + 'u' or 'wp' or 'ws' or 'a' in
                     for i in word:
-                        if random() < 0.2 and char_dict_another[i] not in no_dropped_list:
+                        if random() < 0.1 and char_dict_another[i] not in no_dropped_list:
                             char_dropped_len = len(word)
                             sum_dropped_len += char_dropped_len
-                            # print("char_dropped_len:", char_dropped_len)
+                            # word_jieba.append(i)
                             if i not in self.char2id:
                                 self.char2id[i] = len(self.char2id) + char_dropped_len
                     else:
@@ -252,10 +253,10 @@ class TrainDevData:
         batch_size:80/10, lr:0.01, char:u,b     F1:0.65
         batch_size:80/20, lr:0.01, char:u,b,w   F1:0.70
         '''
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=64,
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=80,
                                            shuffle=True, collate_fn=self.len_collate_fn)
         # 加载验证集
-        self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=20,
+        self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=10,
                                           collate_fn=self.len_collate_fn, shuffle=True)
 
         self.test_dataloader = DataLoader(self.test_dataset, batch_size=20,
