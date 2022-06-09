@@ -72,7 +72,7 @@ class CustomNerDataset(Dataset):
             char_dict = dict(zip(i_list, word_list))
             char_dict_list.append(char_dict)
             char_dict_another = dict(zip(word_list, i_list))
-            #
+            # print("char_dict:", char_dict)
             original_text = line.get('originalText')
             entities_text = line.get('entities')
             labels_list, start_end_labels = [], []
@@ -105,13 +105,12 @@ class CustomNerDataset(Dataset):
             character_vector_dict = dict(zip(character_tf_idf, vector_tf_idf))
 
             # 给所有字符加上tf_idf权重
-            for i in range(len(char_dict_list)):
-                sub_vector = [0] * len(char_dict_list[i])
-                for index, vector in character_vector_dict.items():
-                    for key, value in char_dict_list[i].items():
-                        for a in index:
-                            if a == value:
-                                sub_vector[key] = vector
+            sub_vector = [0] * len(char_dict)
+            for index, vector in character_vector_dict.items():
+                for key, value in char_dict.items():
+                    for a in index:
+                        if a == value:
+                            sub_vector[key] = vector
                 # vocabulary_tf_idf.append(sub_vector)
 
             start_list, end_list, s_e_list = [], [], []
