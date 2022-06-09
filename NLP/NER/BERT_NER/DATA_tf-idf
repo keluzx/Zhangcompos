@@ -227,69 +227,53 @@ class CustomNerDataset(Dataset):
         # 该类会统计每个词语的tf-idf权值
         tf_idf_transformer = TfidfTransformer()
         tf_idf = tf_idf_transformer.fit_transform(cv.fit_transform(tf_idf_list))
-        print("tf_idf_list:", tf_idf_list)
-        print("total_len_list:", total_len_list)
+        # print("tf_idf_list:", tf_idf_list)
+        # print("total_len_list:", total_len_list)
         x_train_weight = tf_idf.toarray()
-        print("x_train_weight:", x_train_weight)
-
+        # print("x_train_weight:", x_train_weight)
 
         # tf_idf 的字典
-        temp = 0
-        vector = []
-        character = []
+        vector_tf_idf = []
+        character_tf_idf = []
+        sentence_tf_idf = ''
         sub_vocabulary = cv.vocabulary_
-        print('sub_vocabulary:', sub_vocabulary)
+        # tf-idf 字典
         for i in sub_vocabulary.keys():
-            character.append(i)
-        sub_vocabulary_values = sub_vocabulary.values()
-        sub_vocabulary_keys = sub_vocabulary.keys()
-        print("sub_vocabulary_keys:", sub_vocabulary_keys)
-        print("sub_vocabulary_values:", sub_vocabulary_values)
+            character_tf_idf.append(i)
+            sentence_tf_idf += i
+        # tf-idf字典中每个字符的tf-idf权值
         for i in range(len(x_train_weight[0])):
-            temp += 1
-            vector.append(x_train_weight[0][i])
-            print('vectr:', x_train_weight[0][i])
-        print('vector:', len(vector))
-        print('character:', len(character))
-        print("x_train_weight:", len(x_train_weight[0]))
-        print("sub_vocabulary:", len(sub_vocabulary.items()))
-        print("total_start_list:", total_start_list)
-        print("sub_vocabulary:", len(x_train_weight))
-        print('char_dict_list:', char_dict_list[0].values())
+            vector_tf_idf.append(x_train_weight[0][i])
+        character_vector_dict = dict(zip(character_tf_idf, vector_tf_idf))
 
+        # 给所有字符加上tf_idf权重
         vocabulary_tf_idf = []
-        # for i, j in sub_vocabulary.items():
-        #     for char in i:
-        #         vocabulary_tf_idf.extend(char)
-        # print("vocabulary_tf_idf:", len(vocabulary_tf_idf))
-        len_ = 0
         for i in range(len(char_dict_list)):
-            sub_vector = []
-            for key, value in char_dict_list[i].items():
-                for z in range(len(x_train_weight[0])):
-                    len_ += 1
-        # print("len__:", len_)
+            sub_vector = [0] * len(char_dict_list[i])
+            for index, vector in character_vector_dict.items():
+                for key, value in char_dict_list[i].items():
+                    for a in index:
+                        if a == value:
+                            sub_vector[key] = vector
+            vocabulary_tf_idf.append(sub_vector)
+        self.data.append(vocabulary_tf_idf)
+        print(self.data)
+        print("vocabulary_tf_idf_1:", (vocabulary_tf_idf))
 
     # 返回训练集的长度
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        chars, labels = self.data[idx]
-        # print("chars_value:", self.char2id)
-        # print("labelss_value:", labels)
-        # for c in chars:
-        #     print("c_index:", c)
+        chars, labels, tf_idf_weight = self.data[idx]
         chars = [self.char2id[c] if c in self.char2id else self.char2id[self.UNK] for c in chars]
         labels = [self.label2id[lbl] for lbl in labels]
-        # print("chars_value:", chars)
-        # print("labels_len_ori:", len(labels))
-        # print("chars_len:", len(chars))
 
         return {
             'chars': torch.LongTensor(chars),
             'labels': torch.LongTensor(labels),
-            'len_chars': len(chars)
+            'len_chars': len(chars),
+            'tf_idf_weight': torch.FloatTensor(tf_idf_weight)
         }
 
 
