@@ -11,9 +11,11 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
 
 
+device_lstm_crf_attn_pos_tfidf = torch.device("cuda:1")
+
 class CustomNerDataset(Dataset):
     # 首先构造训练集的字典与标签  subtask1_training_part1.txt
-    def __init__(self, file_path='data/subtask1_train/demo.txt', vocab=None, tags=None):
+    def __init__(self, file_path='data/subtask1_train/subtask1_training_part1.txt', vocab=None, tags=None):
         self.data = []
         self.PAD = "[PAD]"
         self.UNK = "[UNK]"
@@ -37,10 +39,12 @@ class CustomNerDataset(Dataset):
         sen = ''
         tf_idf_list = []
         total_len_list = []
-        char_dict = None
+        sub_vector = None
         char_dict_list = []
         total_start_list, total_end_list = [], []
+        len_line = 0
         for line in codecs.open(file_path, 'r', 'utf_8_sig'):
+            len_line += 1
             char_jieba_list = []
             char_jieba_list_1 = []
             one_example_jieba = []
@@ -55,7 +59,7 @@ class CustomNerDataset(Dataset):
                 sen = sen + i + ' '
             total_len_list.append(char_len_list)
             # sen = "'" + sen + "'"
-            print("sen:", sen)
+            # print("sen:", sen)
             tf_idf_list.append(sen)
             # print("tf_idf_list:", tf_idf_list)
             chars_new = []
@@ -80,6 +84,35 @@ class CustomNerDataset(Dataset):
                 start_end_labels.append(s_e_label)
                 labels_list.append(char_label)
             # print("labels_list:", len(labels_list))
+            cv = CountVectorizer(stop_words=None)
+            # 该类会统计每个词语的tf-idf权值
+            tf_idf_transformer = TfidfTransformer()
+            tf_idf = tf_idf_transformer.fit_transform(cv.fit_transform(tf_idf_list))
+            x_train_weight = tf_idf.toarray()
+
+            # tf_idf 的字典
+            vector_tf_idf = []
+            character_tf_idf = []
+            sentence_tf_idf = ''
+            sub_vocabulary = cv.vocabulary_
+            # tf-idf 字典
+            for i in sub_vocabulary.keys():
+                character_tf_idf.append(i)
+                sentence_tf_idf += i
+            # tf-idf字典中每个字符的tf-idf权值
+            for i in range(len(x_train_weight[0])):
+                vector_tf_idf.append(x_train_weight[0][i])
+            character_vector_dict = dict(zip(character_tf_idf, vector_tf_idf))
+
+            # 给所有字符加上tf_idf权重
+            for i in range(len(char_dict_list)):
+                sub_vector = [0] * len(char_dict_list[i])
+                for index, vector in character_vector_dict.items():
+                    for key, value in char_dict_list[i].items():
+                        for a in index:
+                            if a == value:
+                                sub_vector[key] = vector
+                # vocabulary_tf_idf.append(sub_vector)
 
             start_list, end_list, s_e_list = [], [], []
             start_values, end_values = [], []
@@ -99,22 +132,20 @@ class CustomNerDataset(Dataset):
             start_end_dict_jieba = {}
             for i in range(len(start_end_labels)):
                 start_end_dict_jieba[i] = start_end_labels[i]
-            # print("start_end_dict_jieba:", start_end_dict_jieba)
-            # original_text += original_text.strip()
+
             original_text_chinese = ''.join(original_text)
             original_text_pos = psg.lcut(original_text_chinese)
             # print("original_text_pos:", original_text_pos)
             char_word, char_pos = [], []
             for i, j in original_text_pos:
                 char_word.append(i)
-            # print("original_text_pos:", original_text_pos)
-            # print("original_text_pos:", char_dict.keys())
+
             no_dropped_list = []
             for i in range(len(char_dict.keys())):
                 for j in s_e_list:
                     if j[0] <= i <= j[1]:
                         no_dropped_list.append(i)
-            # print("no_dropped_list:", no_dropped_list)
+
             original_pos = []
             for index, (word, word_pos) in enumerate(original_text_pos):
                 original_pos.append(word_pos)
@@ -131,7 +162,6 @@ class CustomNerDataset(Dataset):
             word_jieba_demo = []
             char_dropped_len = 0
             sum_dropped_len = 0
-
             for index, (word, word_pos) in enumerate(original_text_pos):
                 if 'n' in word_pos:
                     for i in word:
@@ -143,7 +173,6 @@ class CustomNerDataset(Dataset):
                         if random() < 0.1 and char_dict_another[i] not in no_dropped_list:
                             char_dropped_len = len(word)
                             sum_dropped_len += char_dropped_len
-                            # word_jieba.append(i)
                             if i not in self.char2id:
                                 self.char2id[i] = len(self.char2id) + char_dropped_len
                     else:
@@ -156,12 +185,9 @@ class CustomNerDataset(Dataset):
                         word_jieba.append(i)
                         if i not in self.char2id:
                             self.char2id[i] = len(self.char2id) + char_dropped_len
-            # print("sum_dropped_len:", sum_dropped_len)
 
             for i in original_text:
                 word_jieba_demo.append(i)  # word_jieba - 词汇
-            # print("word_jieba_demo:", len(word_jieba_demo))
-            # print("word_jieba:", len(word_jieba))
 
             for sub_word_jieba in word_jieba_demo:
                 for i in sub_word_jieba:
@@ -169,7 +195,6 @@ class CustomNerDataset(Dataset):
 
             for sub_word_jieba in word_jieba:
                 for i in sub_word_jieba:
-                    # print('i_index:', i)
                     char_jieba_list.append(i)  # char_jieba_list - 单个字符
 
             chars_jieba = []
@@ -216,55 +241,22 @@ class CustomNerDataset(Dataset):
                         labels_jieba[start - sum_dropped_len] = 'B-' + k
                         for i in range(start + 1, end):
                             labels_jieba[i - sum_dropped_len] = 'I-' + k
-                        labels_jieba[end - sum_dropped_len] = 'E-' + k
 
             one_example_jieba.append(labels_jieba)
-            # print("one_example_jieba:", one_example_jieba)
+            one_example_jieba.append(sub_vector)
+
             self.data.append(one_example_jieba)
-        # print("word_labels:", word_labels)
-        # print("tf_idf_list:", len(tf_idf_list))
-        cv = CountVectorizer(stop_words=None)
-        # 该类会统计每个词语的tf-idf权值
-        tf_idf_transformer = TfidfTransformer()
-        tf_idf = tf_idf_transformer.fit_transform(cv.fit_transform(tf_idf_list))
-        # print("tf_idf_list:", tf_idf_list)
-        # print("total_len_list:", total_len_list)
-        x_train_weight = tf_idf.toarray()
-        # print("x_train_weight:", x_train_weight)
-
-        # tf_idf 的字典
-        vector_tf_idf = []
-        character_tf_idf = []
-        sentence_tf_idf = ''
-        sub_vocabulary = cv.vocabulary_
-        # tf-idf 字典
-        for i in sub_vocabulary.keys():
-            character_tf_idf.append(i)
-            sentence_tf_idf += i
-        # tf-idf字典中每个字符的tf-idf权值
-        for i in range(len(x_train_weight[0])):
-            vector_tf_idf.append(x_train_weight[0][i])
-        character_vector_dict = dict(zip(character_tf_idf, vector_tf_idf))
-
-        # 给所有字符加上tf_idf权重
-        vocabulary_tf_idf = []
-        for i in range(len(char_dict_list)):
-            sub_vector = [0] * len(char_dict_list[i])
-            for index, vector in character_vector_dict.items():
-                for key, value in char_dict_list[i].items():
-                    for a in index:
-                        if a == value:
-                            sub_vector[key] = vector
-            vocabulary_tf_idf.append(sub_vector)
-        self.data.append(vocabulary_tf_idf)
-        print(self.data)
-        print("vocabulary_tf_idf_1:", (vocabulary_tf_idf))
+            # print('data_data:', self.data)
+            print("line:", len_line)
+        print('data_data:', self.data)
+        print('There')
 
     # 返回训练集的长度
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
+        print('data_data:', self.data)
         chars, labels, tf_idf_weight = self.data[idx]
         chars = [self.char2id[c] if c in self.char2id else self.char2id[self.UNK] for c in chars]
         labels = [self.label2id[lbl] for lbl in labels]
@@ -278,8 +270,8 @@ class CustomNerDataset(Dataset):
 
 
 class TrainDevData:
-    def __init__(self, train_path="data/subtask1_train/demo.txt",
-                 dev_path="data/subtask1_train/demo.txt", vocab=None):
+    def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt",
+                 dev_path="data/subtask1_train/subtask1_training_part1.txt", vocab=None):
         # subtask1_test/subtask1_test_set_with_answer.json
 
         self.train_data = CustomNerDataset(train_path, vocab=vocab)
@@ -308,10 +300,10 @@ class TrainDevData:
         batch_size:80/20, lr:0.01, char:u,b,w   F1:0.70
         '''
         self.train_dataloader = DataLoader(self.train_dataset, batch_size=80,
-                                           shuffle=True, collate_fn=self.len_collate_fn)
+                                           shuffle=False, collate_fn=self.len_collate_fn)
         # 加载验证集
         self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=10,
-                                          collate_fn=self.len_collate_fn, shuffle=True)
+                                          collate_fn=self.len_collate_fn, shuffle=False)
 
         self.test_dataloader = DataLoader(self.test_dataset, batch_size=20,
                                           collate_fn=self.len_collate_fn, shuffle=True)
