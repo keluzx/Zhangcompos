@@ -229,21 +229,14 @@ class CustomNerDataset(Dataset):
         }
 
 
-class TrainDevData:
-    def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt",
-                 dev_path="data/subtask1_train/subtask1_training_part1.txt", vocab=None):
-        # subtask1_test/subtask1_test_set_with_answer.json
+class TrainDevData:  # subtask1_test_set_with_answer.json
+    def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt", vocab=None):
         self.train_data = CustomNerDataset(train_path, vocab=vocab)
-        print('len_data:', len(self.train_data))
-        self.eval_data = CustomNerDataset(dev_path,
-                                          vocab=self.train_data.char2id,
-                                          tags=self.train_data.label2id)
+
         self.train_size = int(len(self.train_data) * 0.7)
         self.validate_size = int(len(self.train_data) * 0.5)
         self.test_size = len(self.train_data) - self.validate_size - self.train_size
-        print('train_size:', self.train_size)
-        print('validate_size:', self.validate_size)
-        print('test_size:', self.test_size)
+
         self.train_dataset, self.validate_dataset, self.test_dataset = \
             torch.utils.data.random_split(self.train_data, [self.train_size, self.validate_size, self.test_size])
 
@@ -251,16 +244,11 @@ class TrainDevData:
         self.id2tag = {v: k for k, v in self.train_data.label2id.items()}
         self.vocab_size = len(self.train_data.char2id) + 100
         self.num_tags = len(self.train_data.label2id)
-        print('num_tags:', self.num_tags)
-        print('id2tag:', self.id2tag)
-        # 加载训练集  #
 
         self.train_dataloader = DataLoader(self.train_dataset, batch_size=20,
                                            shuffle=True, collate_fn=self.len_collate_fn)
-        # 加载验证集
         self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=10,
                                           collate_fn=self.len_collate_fn, shuffle=True)
-
         # self.test_dataloader = DataLoader(self.test_dataset, batch_size=20,
         #                                   collate_fn=self.len_collate_fn, shuffle=True)
 
@@ -282,11 +270,11 @@ class TrainDevData:
             for index, value in enumerate(chars[i]):
                 if value.item() == juhao_index:
                     juhao_line.append(index)
+                    juhao_line = sorted(juhao_line)
             chars_seged = []
             for a in range(len(juhao_line)):
-                if a < len(juhao_line)-1 and juhao_line[a]:
-                    chars_seged.append(chars[i][juhao_line[a]-1: juhao_line[a+1]+1])
-
+                if a < len(juhao_line) - 1:
+                    chars_seged.append(chars[i][juhao_line[a] - 1: juhao_line[a + 1] + 1])
         # 以句号切分labels
         for i in range(len(chars)):
             for index, value in enumerate(labels[i]):
@@ -294,10 +282,11 @@ class TrainDevData:
                     juhao_line.append(index)
             labels_seged = []
             for a in range(len(juhao_line)):
-                if a < len(juhao_line)-1:
-                    labels_seged.append(labels[i][juhao_line[a]-1: juhao_line[a+1]+1])
+                if a < len(juhao_line) - 1:
+                    labels_seged.append(labels[i][juhao_line[a] - 1: juhao_line[a + 1] + 1])
+
         for i in range(len(labels_seged)):
-            max_seq_lens.append(len(labels_seged[i]))
+            max_seq_lens.append(len(labels_seged[i].tolist()))
         print("max_seq_len:", max_seq_lens)
         # print("seq_lens:", seq_lens)
         chars = pad_sequence(chars, batch_first=True, padding_value=0)
