@@ -1,0 +1,154 @@
+import torch
+from torch.utils.data import DataLoader, Dataset, sampler
+from torch.nn.utils.rnn import pad_sequence
+import codecs
+import json
+import jieba.posseg as psg
+
+
+class CustomNerDataset(Dataset):
+    def __init__(self, file_path='data/subtask1_train/subtask1_training_part1.txt', vocab=None, tags=None):
+        self.data = []
+        self.PAD = "[PAD]"
+        self.UNK = "[UNK]"
+
+        if vocab:
+            self.char2id = vocab
+        else:
+            self.char2id = {self.PAD: 0, self.UNK: 1}
+        if tags:
+            self.label2id = tags
+        else:
+            self.label2id = {'O': 0}
+        for line in codecs.open(file_path, 'r', 'utf_8_sig'):
+            line = json.loads(line)
+            one_example = []
+            chars = []
+
+            for c in line['originalText']:
+                chars.append(c)
+                # print("chars:", chars)
+                if not vocab:
+                    if c not in self.char2id:
+                        self.char2id[c] = len(self.char2id)
+            one_example.append(chars)
+
+            labels = ['O'] * len(chars)
+            keys_list = line.get('entities')
+
+            labels_list, start_end_labels = [], []
+
+            for k in keys_list:
+                char_label = k.get('label_type')
+                start_label = k.get('start_pos')
+                end_label = k.get('end_pos')
+                s_e_label = [start_label, end_label - 1]
+                start_end_labels.append(s_e_label)
+                labels_list.append(char_label)
+            # print("labels_list:", labels_list)
+
+            start_end_dict = {}
+            for i in range(len(start_end_labels)):
+                start_end_dict[i] = start_end_labels[i]
+            # print("start_end_dict:", start_end_dict)
+            temp = 0
+            for k in labels_list:
+
+                if not tags:
+                    if 'B-' + k not in self.label2id:
+                        self.label2id['B-' + k] = len(self.label2id)
+                        self.label2id['I-' + k] = len(self.label2id)
+                        self.label2id['E-' + k] = len(self.label2id)
+                        self.label2id['S-' + k] = len(self.label2id)
+                # print("label2id_second:", self.label2id)
+                start, end = start_end_dict[temp]
+                temp += 1
+                # print("start_end:", start, end)
+                assert start <= end
+                if start == end:
+                    labels[start] = 'S-' + k
+                elif start + 1 == end:
+                    labels[start:end + 1] = ['B-' + k, 'E-' + k]
+                else:
+                    labels[start] = 'B-' + k
+                    for i in range(start + 1, end):
+                        labels[i] = 'I-' + k
+                    labels[end] = 'E-' + k
+            # print("labels_new:", labels)
+            one_example.append(labels)
+            self.data.append(one_example)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        chars, labels = self.data[idx]
+        # print('chars_first:', chars)
+        # print("labels_first:", labels)
+        # print('data_index:', self.data)
+        chars = [self.char2id[c] if c in self.char2id else self.char2id[self.UNK] for c in chars]
+        labels = [self.label2id[lbl] for lbl in labels]
+        # print('chars_labels:', chars)
+        return {
+            'chars': torch.LongTensor(chars),
+            'labels': torch.LongTensor(labels),
+            'len_chars': len(chars)
+        }
+
+
+class TrainDevData:
+    def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt",
+                 dev_path="data/subtask1_test/subtask1_test_set_with_answer.json", vocab=None):
+        self.train_data = CustomNerDataset(train_path, vocab=vocab)
+        self.eval_data = CustomNerDataset(dev_path,
+                                          vocab=self.train_data.char2id,
+                                          tags=self.train_data.label2id)
+        self.id2char = {v: k for k, v in self.train_data.char2id.items()}
+        self.id2tag = {v: k for k, v in self.train_data.label2id.items()}
+        self.vocab_size = len(self.train_data.char2id)
+        self.num_tags = len(self.train_data.label2id)
+        print("label_dict:", self.train_data.label2id)
+        print('num_tags:', self.num_tags)
+        self.train_dataloader = DataLoader(self.train_data, batch_size=10,
+                                           shuffle=True, collate_fn=self.len_collate_fn)
+        self.eval_dataloader = DataLoader(self.eval_data, batch_size=10, collate_fn=self.len_collate_fn,
+                                          shuffle=True)
+        # print('evaluate_data:', self.eval_data.char2id)
+
+    def len_collate_fn(self, batch_data):
+        chars, labels, seq_lens = [], [], []
+        for d in batch_data:
+            chars.append(d['chars'])
+            labels.append(d['labels'])
+            seq_lens.append(d['len_chars'])
+
+        chars = pad_sequence(chars, batch_first=True, padding_value=0)
+        # print("chars_ffff:", chars)
+        # print("chars_original:", chars.size())
+        labels = pad_sequence(labels, batch_first=True, padding_value=0)
+
+        list_chars = chars.numpy().tolist()
+        list_labels = labels.numpy().tolist()
+        # print("list_chars:", list_chars)
+
+        if torch.cuda.is_available():
+            if chars.size(1) > 512:
+                for i in range(len(list_chars)):
+                    list_chars[i] = list_chars[i][0: 511]
+                    list_labels[i] = list_labels[i][0: 511]
+        # else:
+        #     if labels.size(1) > 512:
+        #         for i in range(len(list_chars)):
+        #             list_labels[i] = list_labels[i][0: 511]
+        #             list_labels[i] = list_labels[i][0: 511]
+        chars = torch.tensor(list_chars)
+        labels = torch.tensor(list_labels)
+        # print('chars_final:', chars.size())
+        return chars, labels, torch.LongTensor(seq_lens)
+
+
+if __name__ == '__main__':
+    dataset = CustomNerDataset()
+    print(len(dataset.char2id))
+    print(len(dataset.label2id))
+    print(dataset.data[0])
