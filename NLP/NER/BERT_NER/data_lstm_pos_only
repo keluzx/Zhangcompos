@@ -12,7 +12,7 @@ from sklearn.feature_extraction.text import TfidfTransformer
 
 class CustomNerDataset(Dataset):
     # 首先构造训练集的字典与标签  subtask1_training_part1.txt
-    def __init__(self, file_path='data/subtask1_train/demo.txt', vocab=None, tags=None):
+    def __init__(self, file_path='data/subtask1_train/subtask1_training_part1.txt', vocab=None, tags=None):
         self.data = []
         self.PAD = "[PAD]"
         self.UNK = "[UNK]"
@@ -32,10 +32,12 @@ class CustomNerDataset(Dataset):
             self.label2id_new = {'O': 0}
 
         word_labels = {}
+        all_start_end_labels = []
         for line in codecs.open(file_path, 'r', 'utf_8_sig'):
             char_jieba_list = []
             char_jieba_list_1 = []
             one_example_jieba = []
+            start_end_labels = []
             line = json.loads(line)
             chars_new = []
             for c in line['originalText']:
@@ -49,29 +51,28 @@ class CustomNerDataset(Dataset):
             # print('char_dict:', char_dict)
             original_text = line.get('originalText')
             entities_text = line.get('entities')
-            labels_list, start_end_labels = [], []
+            labels_list = []
             for k in entities_text:
                 char_label = k.get('label_type')
                 start_label = k.get('start_pos')
                 end_label = k.get('end_pos')
-                s_e_label = [start_label, end_label]
+                s_e_label = (start_label, end_label)
                 start_end_labels.append(s_e_label)
                 labels_list.append(char_label)
-            # print("labels_list:", len(labels_list))
-
+            if start_end_labels not in all_start_end_labels:
+                all_start_end_labels.append(start_end_labels)
             start_list, end_list, s_e_list = [], [], []
             start_values, end_values = [], []
             for i, j in start_end_labels:
                 start_list.append(i)
                 end_list.append(j)
                 s_e_list.append([i, j])
-                # print("i_index:", i)
                 start_value = char_dict[i]
                 end_value = char_dict[j]
                 start_values.append(start_value)
                 end_values.append(end_value)
-            # print("start_list:", s_e_list)
-
+                # print("start_list:", s_e_list)
+            # print("all_start_end_labels:", all_start_end_labels)
             start_end_dict_jieba = {}
             for i in range(len(start_end_labels)):
                 start_end_dict_jieba[i] = start_end_labels[i]
@@ -195,6 +196,7 @@ class CustomNerDataset(Dataset):
                         labels_jieba[end - sum_dropped_len] = 'E-' + k
 
             one_example_jieba.append(labels_jieba)
+            one_example_jieba.append(all_start_end_labels)
             # print("one_example_jieba:", one_example_jieba)
             self.data.append(one_example_jieba)
         # print("word_labels:", word_labels)
@@ -205,9 +207,9 @@ class CustomNerDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        chars, labels = self.data[idx]
+        chars, labels, start_end_labels = self.data[idx]
         # print("chars_value:", self.char2id)
-        # print("labelss_value:", labels)
+        # print("start_end_labels:", start_end_labels)
         for i, j in self.char2id.items():
             if i == '。':
                 juhao_index = j
@@ -222,20 +224,21 @@ class CustomNerDataset(Dataset):
             'chars': torch.LongTensor(chars),
             'labels': torch.LongTensor(labels),
             'len_chars': len(chars),
-            'juhao_index': juhao_index
+            'juhao_index': juhao_index,
+            'start_end_labels': start_end_labels
         }
 
 
 class TrainDevData:
-    def __init__(self, train_path="data/subtask1_train/demo.txt",
-                 dev_path="data/subtask1_train/demo.txt", vocab=None):
+    def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt",
+                 dev_path="data/subtask1_train/subtask1_training_part1.txt", vocab=None):
         # subtask1_test/subtask1_test_set_with_answer.json
         self.train_data = CustomNerDataset(train_path, vocab=vocab)
         print('len_data:', len(self.train_data))
         self.eval_data = CustomNerDataset(dev_path,
                                           vocab=self.train_data.char2id,
                                           tags=self.train_data.label2id)
-        self.train_size = int(len(self.train_data) * 0.5)
+        self.train_size = int(len(self.train_data) * 0.7)
         self.validate_size = int(len(self.train_data) * 0.5)
         self.test_size = len(self.train_data) - self.validate_size - self.train_size
         print('train_size:', self.train_size)
@@ -252,7 +255,7 @@ class TrainDevData:
         print('id2tag:', self.id2tag)
         # 加载训练集  #
 
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=80,
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=20,
                                            shuffle=True, collate_fn=self.len_collate_fn)
         # 加载验证集
         self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=10,
@@ -262,7 +265,8 @@ class TrainDevData:
         #                                   collate_fn=self.len_collate_fn, shuffle=True)
 
     def len_collate_fn(self, batch_data):
-        chars, labels, seq_lens = [], [], []
+        global chars_seged, labels_seged
+        chars, labels, seq_lens, max_seq_lens = [], [], [], []
         # print("batch_data:", batch_data)
         juhao_index = None
         for d in batch_data:
@@ -270,29 +274,38 @@ class TrainDevData:
             labels.append(d['labels'])
             seq_lens.append(d['len_chars'])
             juhao_index = d['juhao_index']
-        print("labels:", labels)
+            start_end_labels = d['start_end_labels']
+        # print("start_end_labels_pos:", start_end_labels)
         # 以句号切分line
         juhao_line = []
         for i in range(len(chars)):
             for index, value in enumerate(chars[i]):
-                print("char_j:", index, value)
                 if value.item() == juhao_index:
                     juhao_line.append(index)
             chars_seged = []
             for a in range(len(juhao_line)):
-                if a < len(juhao_line)-1:
+                if a < len(juhao_line)-1 and juhao_line[a]:
                     chars_seged.append(chars[i][juhao_line[a]-1: juhao_line[a+1]+1])
-        # print("chars_seged:", chars_seged)
-        print("juhao_line:", juhao_line)
-                # if j == juhao_index:
 
-        # print("chars_batch_size:", chars)
-        # print("chars_ss:", chars)
+        # 以句号切分labels
+        for i in range(len(chars)):
+            for index, value in enumerate(labels[i]):
+                if value.item() == juhao_index:
+                    juhao_line.append(index)
+            labels_seged = []
+            for a in range(len(juhao_line)):
+                if a < len(juhao_line)-1:
+                    labels_seged.append(labels[i][juhao_line[a]-1: juhao_line[a+1]+1])
+        for i in range(len(labels_seged)):
+            max_seq_lens.append(len(labels_seged[i]))
+        print("max_seq_len:", max_seq_lens)
+        # print("seq_lens:", seq_lens)
         chars = pad_sequence(chars, batch_first=True, padding_value=0)
-        # print("chars:", chars)
+        chars_seg = pad_sequence(chars_seged, batch_first=True, padding_value=0)
         labels = pad_sequence(labels, batch_first=True, padding_value=0)
+        labels_seg = pad_sequence(labels_seged, batch_first=True, padding_value=0)
         # print("data_char:", chars.data.size())
-        return chars, labels, torch.LongTensor(seq_lens)
+        return chars_seg, labels_seg, torch.LongTensor(max_seq_lens)
 
 
 if __name__ == '__main__':
