@@ -12,7 +12,7 @@ from sklearn.feature_extraction.text import TfidfTransformer
 
 class CustomNerDataset(Dataset):
     # 首先构造训练集的字典与标签  subtask1_training_part1.txt
-    def __init__(self, file_path='data/subtask1_train/subtask1_training_part1.txt', vocab=None, tags=None):
+    def __init__(self, file_path='data/subtask1_train/demo.txt', vocab=None, tags=None):
         self.data = []
         self.PAD = "[PAD]"
         self.UNK = "[UNK]"
@@ -230,11 +230,11 @@ class CustomNerDataset(Dataset):
 
 
 class TrainDevData:  # subtask1_test_set_with_answer.json
-    def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt", vocab=None):
+    def __init__(self, train_path="data/subtask1_train/demo.txt", vocab=None):
         self.train_data = CustomNerDataset(train_path, vocab=vocab)
 
-        self.train_size = int(len(self.train_data) * 0.7)
-        self.validate_size = int(len(self.train_data) * 0.2)
+        self.train_size = int(len(self.train_data) * 0.5)
+        self.validate_size = int(len(self.train_data) * 0.5)
         self.test_size = len(self.train_data) - self.validate_size - self.train_size
 
         self.train_dataset, self.validate_dataset, self.test_dataset = \
@@ -254,6 +254,7 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
 
     def len_collate_fn(self, batch_data):
         global chars_seged, labels_seged
+        chars_seged_all = []
         chars, labels, seq_lens, max_seq_lens = [], [], [], []
         # print("batch_data:", batch_data)
         juhao_index = None
@@ -262,40 +263,50 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
             labels.append(d['labels'])
             seq_lens.append(d['len_chars'])
             juhao_index = d['juhao_index']
-            # start_end_labels = d['start_end_labels']
-        # print("chars:", chars)
+        print("juhao_index:", juhao_index)
+        print("chars:", chars)
         # print("labels:", labels)
         # 以句号切分line
+        chars_seged_all = []
+        chars_seged = []
         for i in range(len(chars)):
-            juhao_line_char = []
+            juhao_line_char = [0]
             for index, value in enumerate(chars[i]):
-                # print(index, value)
                 if value.item() == juhao_index:
                     juhao_line_char.append(index)
                     juhao_line_char = sorted(juhao_line_char)
-            # print("juhao_line_char:", juhao_line_char)
-            chars_seged = []
+            print("juhao_line_char:", juhao_line_char)
             if len(juhao_line_char) > 1:
                 for a in range(len(juhao_line_char)):
                     if a < len(juhao_line_char) - 1:
-                        chars_seged.append(chars[i][juhao_line_char[a] - 1: juhao_line_char[a + 1] + 1])
-                    # print("chars_seged:", chars_seged)
+                        chars_seged.append(chars[i][juhao_line_char[a]+1: juhao_line_char[a + 1]+1])
+                print("chars_seged_if:", chars_seged)
+                chars_seged_all.append(chars_seged)
             elif len(juhao_line_char) == 1:
                 chars_seged.append(torch.tensor([juhao_index]))
-        print("chars_seged__:", len(chars_seged))
-        print("chars_seged__:", chars_seged)
+            chars_seged_all.append(chars_seged)
+            print('chars_seged:', len(chars_seged))
+        print('chars_seged_all:', len(chars_seged_all))
+
+        # 每一个line的长度
+        chars_len = []
+        for i in range(len(chars)):
+            chars_len.append(len(chars[i]))
+        print("chars_len:", chars_len)
+
         # 以句号切分labels
         sub_chars_len = [0]
         for i in range(len(chars_seged)):
             sub_chars_len.append(len(chars_seged[i]))
         # print("sub_chars_len:", sub_chars_len)
-        labels_seged = []
-        for i in range(len(labels)):
-            for a in range(len(sub_chars_len)):
-                if a < len(sub_chars_len) - 1:
-                    labels_seged.append(labels[i][sub_chars_len[a]: sub_chars_len[a] + sub_chars_len[a+1]])
+
+        labels_seged_all = []
+        for i in range(len(chars_seged_all)):
+            labels_seged = []
+            for a in range(len(chars_seged_all[i])):
+                labels_seged.append(labels[i][a])
         # for i in range(len(labels_seged)):
-        print("labels_seged:", labels_seged[0])
+        print("labels_seged:", len(labels_seged))
 
         for i in range(len(chars_seged)):
             max_seq_lens.append(len(chars_seged[i].tolist()))
