@@ -233,8 +233,8 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
     def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt", vocab=None):
         self.train_data = CustomNerDataset(train_path, vocab=vocab)
 
-        self.train_size = int(len(self.train_data) * 0.5)
-        self.validate_size = int(len(self.train_data) * 0.5)
+        self.train_size = int(len(self.train_data) * 0.7)
+        self.validate_size = int(len(self.train_data) * 0.2)
         self.test_size = len(self.train_data) - self.validate_size - self.train_size
 
         self.train_dataset, self.validate_dataset, self.test_dataset = \
@@ -245,9 +245,9 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
         self.vocab_size = len(self.train_data.char2id) + 100
         self.num_tags = len(self.train_data.label2id)
 
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=1,
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=50,
                                            shuffle=True, collate_fn=self.len_collate_fn)
-        self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=1,
+        self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=10,
                                           collate_fn=self.len_collate_fn, shuffle=True)
         # self.test_dataloader = DataLoader(self.test_dataset, batch_size=20,
         #                                   collate_fn=self.len_collate_fn, shuffle=True)
@@ -280,21 +280,22 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
                     if a < len(juhao_line_char) - 1:
                         chars_seged.append(chars[i][juhao_line_char[a] - 1: juhao_line_char[a + 1] + 1])
                     # print("chars_seged:", chars_seged)
-            else:
+            elif len(juhao_line_char) == 1:
                 chars_seged.append(torch.tensor([juhao_index]))
-        # print("chars_seged:", chars_seged)
+        print("chars_seged__:", len(chars_seged))
+        print("chars_seged__:", chars_seged)
         # 以句号切分labels
         sub_chars_len = [0]
-        labels_seged = []
         for i in range(len(chars_seged)):
             sub_chars_len.append(len(chars_seged[i]))
         # print("sub_chars_len:", sub_chars_len)
+        labels_seged = []
         for i in range(len(labels)):
             for a in range(len(sub_chars_len)):
                 if a < len(sub_chars_len) - 1:
                     labels_seged.append(labels[i][sub_chars_len[a]: sub_chars_len[a] + sub_chars_len[a+1]])
-        for i in range(len(labels_seged)):
-            # print("labels_seged:", len(labels_seged[i]))
+        # for i in range(len(labels_seged)):
+        print("labels_seged:", labels_seged[0])
 
         for i in range(len(chars_seged)):
             max_seq_lens.append(len(chars_seged[i].tolist()))
@@ -302,16 +303,13 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
         # print("chars_original:", chars)
         # chars = pad_sequence(chars, batch_first=True, padding_value=0)
         # labels = pad_sequence(labels, batch_first=True, padding_value=0)
-        # print("chars_final:", chars)
-
-        # print("chars_seged_original:", labels_seged)
+        print("chars_final:", len(labels))
+        print("chars_seged_original:", len(labels_seged[0]))
+        print("chars_seged_original:", len(chars_seged[0]))
         chars_seged = pad_sequence(chars_seged, batch_first=True, padding_value=0)
-        labels_seged = pad_sequence(labels_seged, batch_first=True, padding_value=0)
-        # print("chars_seged_final:", labels_seged)
-        # for i in range(len(chars_seged)):
-        #     chars_seged[i] = pad_sequence(chars_seged[i], batch_first=True, padding_value=0)
-        #     labels_seged[i] = pad_sequence(labels_seged[i], batch_first=True, padding_value=0)
-        # print("data_char:", chars.data.size())
+        labels_seged = pad_sequence(labels_seged[0], batch_first=True, padding_value=0)
+        # print("chars_seged_final:", chars_seged.size())
+        # print("labels_seged:", labels_seged.size())
         return chars_seged, labels_seged, torch.LongTensor(max_seq_lens)
 
 
