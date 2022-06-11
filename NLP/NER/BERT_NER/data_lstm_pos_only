@@ -12,7 +12,7 @@ from sklearn.feature_extraction.text import TfidfTransformer
 
 class CustomNerDataset(Dataset):
     # 首先构造训练集的字典与标签  subtask1_training_part1.txt
-    def __init__(self, file_path='data/subtask1_train/demo.txt', vocab=None, tags=None):
+    def __init__(self, file_path='data/subtask1_train/subtask1_training_part1.txt', vocab=None, tags=None):
         self.data = []
         self.PAD = "[PAD]"
         self.UNK = "[UNK]"
@@ -230,7 +230,7 @@ class CustomNerDataset(Dataset):
 
 
 class TrainDevData:  # subtask1_test_set_with_answer.json
-    def __init__(self, train_path="data/subtask1_train/demo.txt", vocab=None):
+    def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt", vocab=None):
         self.train_data = CustomNerDataset(train_path, vocab=vocab)
 
         self.train_size = int(len(self.train_data) * 0.5)
@@ -269,15 +269,19 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
         for i in range(len(chars)):
             juhao_line_char = []
             for index, value in enumerate(chars[i]):
+                # print(index, value)
                 if value.item() == juhao_index:
                     juhao_line_char.append(index)
                     juhao_line_char = sorted(juhao_line_char)
             # print("juhao_line_char:", juhao_line_char)
             chars_seged = []
-            for a in range(len(juhao_line_char)):
-                if a < len(juhao_line_char) - 1:
-                    chars_seged.append(chars[i][juhao_line_char[a] - 1: juhao_line_char[a + 1] + 1])
+            if len(juhao_line_char) > 1:
+                for a in range(len(juhao_line_char)):
+                    if a < len(juhao_line_char) - 1:
+                        chars_seged.append(chars[i][juhao_line_char[a] - 1: juhao_line_char[a + 1] + 1])
                     # print("chars_seged:", chars_seged)
+            else:
+                chars_seged.append(torch.tensor([juhao_index]))
         # print("chars_seged:", chars_seged)
         # 以句号切分labels
         sub_chars_len = [0]
@@ -289,12 +293,12 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
             for a in range(len(sub_chars_len)):
                 if a < len(sub_chars_len) - 1:
                     labels_seged.append(labels[i][sub_chars_len[a]: sub_chars_len[a] + sub_chars_len[a+1]])
-        # for i in range(len(labels_seged)):
-        #     print("labels_seged:", len(labels_seged[i]))
+        for i in range(len(labels_seged)):
+            # print("labels_seged:", len(labels_seged[i]))
 
         for i in range(len(chars_seged)):
             max_seq_lens.append(len(chars_seged[i].tolist()))
-        print("max_seq_lens:", max_seq_lens)
+        # print("max_seq_lens:", max_seq_lens)
         # print("chars_original:", chars)
         # chars = pad_sequence(chars, batch_first=True, padding_value=0)
         # labels = pad_sequence(labels, batch_first=True, padding_value=0)
