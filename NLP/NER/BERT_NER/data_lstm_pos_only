@@ -266,55 +266,60 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
         print("chars:", chars)
         print("labels:", labels)
         # 以句号切分line
+
+        chars_seged = []
         chars_seged_all = []
+        a = []
         for i in range(len(chars)):
-            chars_seged = []
             juhao_line_char = [0]
             for index, value in enumerate(chars[i]):
                 if value.item() == juhao_index:
                     juhao_line_char.append(index)
                     juhao_line_char = sorted(juhao_line_char)
-            print("juhao_line_char:", len(juhao_line_char))
+            chars_seged_all.append(juhao_line_char)
+            # print("juhao_line_char:", (juhao_line_char))
             if len(juhao_line_char) > 1:
                 for a in range(len(juhao_line_char)):
-                    if a < len(juhao_line_char) - 2:
-                        chars_seged.append(chars[i][juhao_line_char[a] + 1: juhao_line_char[a + 2] + 1])
-                print("chars_seged_if:", chars_seged)
-                chars_seged_all.append(chars_seged)
+                    if a < len(juhao_line_char) - 1:
+                        chars_seged.append(chars[i][juhao_line_char[a] + 1: juhao_line_char[a + 1] + 1])
+                # print("chars_seged_if:", len(chars_seged))
             elif len(juhao_line_char) == 1:
                 chars_seged.append(torch.tensor([juhao_index]))
-                chars_seged_all.append(chars_seged)
-        print('chars_seged:', (chars_seged))
-        # print('chars_seged_all:', len(chars_seged_all[0]))
-        # print('chars_seged_all:', len(chars_seged_all[1]))
-        # 每一个line中的句号个数
+        for i in range(len(chars_seged)):
+            # for j in range(len(chars_seged[i])):
+            print("chasr_len:", len(chars_seged[i]))
+        # print('chars_seged:', len(chars_seged))
+        # print('chars_seged_all:', (chars_seged_all))
+
+        # 每一个line中的相邻两个句号的间隔距离
         chars_seged_input = []
         line_len_juhao_all = []
         for i in range(len(chars_seged_all)):
             line_len_juhao_sub = [0]
             for j in range(len(chars_seged_all[i])):
                 chars_seged_input.append(chars_seged_all[i][j])
-                line_len_juhao_sub.append(len(chars_seged_all[i][j]))
+                # line_len_juhao_sub.append(len(chars_seged_all[i][j]))
             line_len_juhao_all.append(line_len_juhao_sub)
-        # print("line_len_juhao:", line_len_juhao_all)
-        # print("chars_seged_input:", len(chars_seged_input))
+        # print("chars_seged_input:", chars_seged_input)
 
         # 每一个line的长度
         chars_len = []
         for i in range(len(chars)):
             chars_len.append(len(chars[i]))
         # 切分后的每个子line的长度
-        for i in range(len(chars_seged_input)):
-            max_seq_lens.append(len(chars_seged_input[i]))
+        for i in range(len(chars_seged)):
+            max_seq_lens.append(len(chars_seged[i]))
         # 以句号切分labels
         labels_seged = []
-        for i in range(len(line_len_juhao_all)):
-            for j in range(len(line_len_juhao_all[i])):
-                if j < len(line_len_juhao_all[i]) - 2:
+        for i in range(len(chars_seged_all)):
+            for j in range(len(chars_seged_all[i])):
+                if j < len(chars_seged_all[i]) - 1:
                     labels_seged.append(
-                        labels[i][line_len_juhao_all[i][j]: line_len_juhao_all[i][j] +
-                                                            line_len_juhao_all[i][j + 2]])
-        print("chars_seged_demo:", len(chars_seged))
+                        labels[i][chars_seged_all[i][j]: chars_seged_all[i][j + 1]])
+
+        for i in range(len(labels_seged)):
+            print('lablse_len:', len(labels_seged[i]))
+        print("chars_seged_demo:", len(chars_seged[0]))
         print("labels_seged_demo:", len(labels_seged))
         # chars = pad_sequence(chars_seged, batch_first=True, padding_value=0)
         # labels = pad_sequence(labels, batch_first=True, padding_value=0)
