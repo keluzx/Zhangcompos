@@ -233,7 +233,7 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
     def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt", vocab=None):
         self.train_data = CustomNerDataset(train_path, vocab=vocab)
 
-        self.train_size = int(len(self.train_data) * 0.4)
+        self.train_size = int(len(self.train_data) * 0.7)
         self.validate_size = int(len(self.train_data) * 0.3)
         self.test_size = len(self.train_data) - self.validate_size - self.train_size
 
@@ -245,9 +245,9 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
         self.vocab_size = len(self.train_data.char2id) + 100
         self.num_tags = len(self.train_data.label2id)
 
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=2,
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=8,
                                            shuffle=False, collate_fn=self.len_collate_fn)
-        self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=2,
+        self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=5,
                                           collate_fn=self.len_collate_fn, shuffle=False)
         # self.test_dataloader = DataLoader(self.test_dataset, batch_size=20,
         #                                   collate_fn=self.len_collate_fn, shuffle=True)
@@ -323,19 +323,15 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
 
         if torch.cuda.is_available():
             for i in range(len(chars)):
-                if len(chars[i]) > 512:
+                if len(chars_seged[i]) > 512:
                     chars_seged[i] = chars_seged[i][0: 511]
                     labels_seged[i] = labels_seged[i][0: 511]
-        #
-        # chars = torch.tensor(list_chars)
-        # labels = torch.tensor(list_labels)
-
-        # chars = pad_sequence(chars_seged, batch_first=True, padding_value=0)
-        # labels = pad_sequence(labels, batch_first=True, padding_value=0)
+                    max_seq_lens.append(len(chars_seged[i]))
+        print("max_seq_lens:", max_seq_lens)
         chars_seged = pad_sequence(chars_seged, batch_first=True, padding_value=0)
         labels_seged = pad_sequence(labels_seged, batch_first=True, padding_value=0)
-        # print("chars_seged_even:", chars_seged.size())
-        # print("chars_seged_even:", labels_seged.size())
+        print("chars_seged_even:", chars_seged.size())
+        print("chars_seged_even:", labels_seged.size())
         return chars_seged, labels_seged, torch.LongTensor(max_seq_lens)
 
 
