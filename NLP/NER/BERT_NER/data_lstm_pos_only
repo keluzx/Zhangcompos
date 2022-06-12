@@ -262,14 +262,13 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
             labels.append(d['labels'])
             seq_lens.append(d['len_chars'])
             juhao_index = d['juhao_index']
-        print("juhao_index:", juhao_index)
-        print("chars:", chars)
-        print("labels:", labels)
+        # print("juhao_index:", juhao_index)
+        # print("chars:", chars)
+        # print("labels:", labels)
         # 以句号切分line
 
         chars_seged = []
         chars_seged_all = []
-        a = []
         for i in range(len(chars)):
             juhao_line_char = [0]
             for index, value in enumerate(chars[i]):
@@ -285,9 +284,9 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
                 # print("chars_seged_if:", len(chars_seged))
             elif len(juhao_line_char) == 1:
                 chars_seged.append(torch.tensor([juhao_index]))
-        for i in range(len(chars_seged)):
+        # for i in range(len(chars_seged)):
             # for j in range(len(chars_seged[i])):
-            print("chasr_len:", len(chars_seged[i]))
+            # print("chasr_len:", len(chars_seged[i]))
         # print('chars_seged:', len(chars_seged))
         # print('chars_seged_all:', (chars_seged_all))
 
@@ -317,16 +316,26 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
                     labels_seged.append(
                         labels[i][chars_seged_all[i][j]: chars_seged_all[i][j + 1]])
 
-        for i in range(len(labels_seged)):
-            print('lablse_len:', len(labels_seged[i]))
-        print("chars_seged_demo:", len(chars_seged[0]))
-        print("labels_seged_demo:", len(labels_seged))
+        # for i in range(len(labels_seged)):
+        #     print('lablse_len:', len(labels_seged[i]))
+        # print("chars_seged_demo:", len(chars_seged[0]))
+        # print("labels_seged_demo:", len(labels_seged))
+
+        if torch.cuda.is_available():
+            for i in range(len(chars)):
+                if len(chars[i]) > 512:
+                    chars_seged[i] = chars_seged[i][0: 511]
+                    labels_seged[i] = labels_seged[i][0: 511]
+        #
+        # chars = torch.tensor(list_chars)
+        # labels = torch.tensor(list_labels)
+
         # chars = pad_sequence(chars_seged, batch_first=True, padding_value=0)
         # labels = pad_sequence(labels, batch_first=True, padding_value=0)
         chars_seged = pad_sequence(chars_seged, batch_first=True, padding_value=0)
         labels_seged = pad_sequence(labels_seged, batch_first=True, padding_value=0)
-        print("chars_seged_even:", chars_seged.size())
-        print("chars_seged_even:", labels_seged.size())
+        # print("chars_seged_even:", chars_seged.size())
+        # print("chars_seged_even:", labels_seged.size())
         return chars_seged, labels_seged, torch.LongTensor(max_seq_lens)
 
 
