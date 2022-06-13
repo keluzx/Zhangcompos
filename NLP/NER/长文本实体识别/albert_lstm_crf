@@ -8,6 +8,7 @@ device_lstm_crf_attn_pos_only = torch.device("cuda:6")
 
 tokenizer = BertTokenizer.from_pretrained('clue/albert_chinese_tiny')
 vocab = tokenizer.get_vocab()
+# print('vocab_len:', len(vocab))
 train_dev_data = TrainDevData(vocab=vocab)
 id2tag = train_dev_data.id2tag
 id2char = train_dev_data.id2char
@@ -16,7 +17,7 @@ eval_dataloader = train_dev_data.eval_dataloader
 
 vocab_size = train_dev_data.vocab_size
 num_tags = train_dev_data.num_tags
-lr = 2e-2
+lr = 2e-5
 embedding_size = 312
 hidden_size = 128
 
@@ -39,8 +40,9 @@ def eval(model=model, eval_dataloader=eval_dataloader):
     result = {}
     for index, (input_tensor, true_tags, seq_lens) in enumerate(eval_dataloader):
         # if torch.cuda.is_available():
-        # input_tensor = input_tensor.to(device_lstm_crf_attn_pos_only)
-        predict_tags = model.decode(input_tensor)
+        input_tensor = input_tensor.to(device_lstm_crf_attn_pos_only)
+        predict_tags = model.decode(input_tensor, seq_lens)
+        # print('eval')
         true_tags = list(true_tags.numpy())
         input_tensor = list(input_tensor.cpu().numpy())
         for pre, true, input in zip(predict_tags, true_tags, input_tensor):
@@ -79,10 +81,10 @@ def eval(model=model, eval_dataloader=eval_dataloader):
     return result
 
 
-def train(model=model, train_loader=train_dataloader, optimizer=optimizer, scheduler=scheduler, epoch=10):
+def train(model=model, train_loader=train_dataloader, optimizer=optimizer, scheduler=scheduler, epoch=1000):
     model.train()
     # if torch.cuda.is_available():
-    # model = model.to(device_lstm_crf_attn_pos_only)
+    model = model.to(device_lstm_crf_attn_pos_only)
     for i in range(epoch):
         epoch_loss = 0
         epoch_count = 0
@@ -90,7 +92,7 @@ def train(model=model, train_loader=train_dataloader, optimizer=optimizer, sched
         for index, (input_tensor, tags, seq_lens) in enumerate(train_loader):
 
             # if torch.cuda.is_available():
-            # input_tensor = input_tensor.to(device_lstm_crf_attn_pos_only)
+            input_tensor = input_tensor.to(device_lstm_crf_attn_pos_only)
             tags = tags.cuda()
             loss = model.compute_loss(input_tensor, tags, seq_lens)
             optimizer.zero_grad()
@@ -102,10 +104,12 @@ def train(model=model, train_loader=train_dataloader, optimizer=optimizer, sched
 
             if index % 100 == 0:
                 print(round(epoch_loss / epoch_count, 3))
+                print('LOSS:', epoch_loss, epoch_count)
                 cur = epoch_loss / epoch_count
-                if cur < 0.2 and (before - cur) / before > 0.01:
-                    result = eval(model, eval_dataloader)
-                    print(i, index, result)
+                # print("cur:", cur)
+                # if cur < 0.2 and (before - cur) / before > 0.01:
+                result = eval(model, eval_dataloader)
+                print(i, index, result)
                 if cur < before:
                     before = cur
 
