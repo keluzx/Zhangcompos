@@ -12,24 +12,22 @@ from sklearn.feature_extraction.text import TfidfTransformer
 
 class CustomNerDataset(Dataset):
     # 首先构造训练集的字典与标签  subtask1_training_part1.txt
-    def __init__(self, file_path='data/subtask1_train/demo.txt', vocab=None, tags=None):
+    def __init__(self, file_path='data/subtask1_train/subtask1_training_part1.txt', vocab=None, tags=None):
         self.data = []
         self.PAD = "[PAD]"
         self.UNK = "[UNK]"
         # print("file_path:", file_path)
-        # print("vocab:", vocab)
+        print("voca_ininb:", vocab)
         if vocab:
             self.char2id = vocab
-            self.char2id_new = vocab
         else:
             self.char2id = {self.PAD: 0, self.UNK: 1}
-            self.char2id_new = {self.PAD: 0, self.UNK: 1}
         if tags:
             self.label2id = tags
-            self.label2id_new = tags
+            # self.label2id_new = tags
         else:
             self.label2id = {'O': 0}
-            self.label2id_new = {'O': 0}
+            # self.label2id_new = {'O': 0}
 
         word_labels = {}
         all_start_end_labels = []
@@ -71,8 +69,15 @@ class CustomNerDataset(Dataset):
                 end_value = char_dict[j]
                 start_values.append(start_value)
                 end_values.append(end_value)
-                # print("start_list:", s_e_list)
-            # print("all_start_end_labels:", all_start_end_labels)
+
+            chars = []
+            for c in line['originalText']:
+                chars.append(c)
+                if not vocab:
+                    # print('not_vocab')
+                    if c not in self.char2id:
+                        self.char2id[c] = len(self.char2id)
+            one_example_jieba.append(chars)
             start_end_dict_jieba = {}
             for i in range(len(start_end_labels)):
                 start_end_dict_jieba[i] = start_end_labels[i]
@@ -108,31 +113,33 @@ class CustomNerDataset(Dataset):
             word_jieba_demo = []
             char_dropped_len = 0
             sum_dropped_len = 0
-
-            for index, (word, word_pos) in enumerate(original_text_pos):
-                if 'n' in word_pos:
-                    for i in word:
-                        word_jieba.append(i)
-                        if i not in self.char2id:
-                            self.char2id[i] = len(self.char2id) + char_dropped_len
-                elif 'w' in word_pos:  # 要丢弃的字符  'u' and 'b' and   + 'u' or 'wp' or 'ws' or 'a' in
-                    for i in word:
-                        if random() < 0.1 and char_dict_another[i] not in no_dropped_list:
-                            char_dropped_len = len(word)
-                            sum_dropped_len += char_dropped_len
-                            # word_jieba.append(i)
-                            if i not in self.char2id:
-                                self.char2id[i] = len(self.char2id) + char_dropped_len
-                    else:
-                        for i in word:
-                            word_jieba.append(i)
-                            if i not in self.char2id:
-                                self.char2id[i] = len(self.char2id) + char_dropped_len
-                else:
-                    for i in word:
-                        word_jieba.append(i)
-                        if i not in self.char2id:
-                            self.char2id[i] = len(self.char2id) + char_dropped_len
+            # print('before_char2id:', len(self.char2id))
+            # print('original_char:', self.char2id)
+            # for index, (word, word_pos) in enumerate(original_text_pos):
+            #     if 'n' in word_pos:  # 名词放入word_jieba中
+            #         for i in word:
+            #             word_jieba.append(i)
+            #             # if i not in self.char2id:
+            #             #     self.char2id[i] = len(self.char2id) + char_dropped_len
+            #     elif 'w' in word_pos:  # 要丢弃的字符  'u' and 'b' and   + 'u' or 'wp' or 'ws' or 'a' in
+            #         for i in word:
+            #             if random() < 0.2 and char_dict_another[i] not in no_dropped_list:
+            #                 char_dropped_len = len(word)
+            #                 sum_dropped_len += char_dropped_len
+            #                 # if i not in self.char2id:
+            #                 #     self.char2id[i] = len(self.char2id) + char_dropped_len
+            #         # else:
+            #         #     for i in word:
+            #         #         word_jieba.append(i)
+            #         #         # if i not in self.char2id:
+            #                 #     self.char2id[i] = len(self.char2id) + char_dropped_len
+            #     else:
+            #         for i in word:
+            #             word_jieba.append(i)
+            #             # if i not in self.char2id:
+            #             #     self.char2id[i] = len(self.char2id) + char_dropped_len
+            # print('char2id:', len(self.char2id))
+            # print('word_jieba:', len(word_jieba))
             # print("sum_dropped_len:", sum_dropped_len)
 
             for i in original_text:
@@ -148,7 +155,8 @@ class CustomNerDataset(Dataset):
                 for i in sub_word_jieba:
                     # print('i_index:', i)
                     char_jieba_list.append(i)  # char_jieba_list - 单个字符
-
+            # print("char_jieba_list:", len(char_jieba_list))
+            # print("char_jieba_list:", len(char_jieba_list_1))
             chars_jieba = []
             chars_jieba_1 = []
             for c_jieba in char_jieba_list:
@@ -156,11 +164,12 @@ class CustomNerDataset(Dataset):
 
             for c_jieba in char_jieba_list_1:
                 chars_jieba_1.append(c_jieba)
+            # print("chars_jieba:", chars_jieba)
+            # print("char_jieba_listKK:", char_jieba_list)
 
-            one_example_jieba.append(chars_jieba)
-            labels_jieba = ['O'] * len(chars_jieba)
+            labels_jieba = ['O'] * len(chars)
             labels_jieba_long = ['O'] * len(chars_jieba_1)
-
+            # print("labels_jieba_there:", labels_jieba)
             temp = 0
             for k in labels_list:
                 if not tags:
@@ -184,22 +193,22 @@ class CustomNerDataset(Dataset):
                         for i in range(start + 1, end):
                             labels_jieba[i] = 'I-' + k
                         labels_jieba[end] = 'E-' + k
-                else:
-                    if start == end:
-                        labels_jieba[start - sum_dropped_len] = 'S-' + k
-                    elif start + 1 == end:
-                        labels_jieba[start - sum_dropped_len:end - sum_dropped_len + 1] = ['B-' + k, 'E-' + k]
-                    else:
-                        labels_jieba[start - sum_dropped_len] = 'B-' + k
-                        for i in range(start + 1, end):
-                            labels_jieba[i - sum_dropped_len] = 'I-' + k
-                        labels_jieba[end - sum_dropped_len] = 'E-' + k
-
+                # else:
+                #     if start == end:
+                #         labels_jieba[start - sum_dropped_len] = 'S-' + k
+                #     elif start + 1 == end:
+                #         labels_jieba[start - sum_dropped_len:end - sum_dropped_len + 1] = ['B-' + k, 'E-' + k]
+                #     else:
+                #         labels_jieba[start - sum_dropped_len] = 'B-' + k
+                #         for i in range(start + 1, end):
+                #             labels_jieba[i - sum_dropped_len] = 'I-' + k
+                #         labels_jieba[end - sum_dropped_len] = 'E-' + k
+            # print("labels_jieba:", labels_jieba)
             one_example_jieba.append(labels_jieba)
             # one_example_jieba.append(all_start_end_labels)
             # print("one_example_jieba:", one_example_jieba)
             self.data.append(one_example_jieba)
-        # print("word_labels:", word_labels)
+        # print("word_labels:", self.data)
 
         # 返回训练集的长度
 
@@ -207,14 +216,16 @@ class CustomNerDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
+        global juhao_index
         chars, labels = self.data[idx]
-        # print("chars_value:", self.char2id)
         # print("start_end_labels:", start_end_labels)
         for i, j in self.char2id.items():
             if i == '。':
                 juhao_index = j
         # print(juhao_index)
         chars = [self.char2id[c] if c in self.char2id else self.char2id[self.UNK] for c in chars]
+        # print("labels_here:", labels)
+        # print("labels_here:", self.label2id)
         labels = [self.label2id[lbl] for lbl in labels]
         # print("chars_value:", chars)
         # print("labels_len_ori:", len(labels))
@@ -230,28 +241,34 @@ class CustomNerDataset(Dataset):
 
 
 class TrainDevData:  # subtask1_test_set_with_answer.json
-    def __init__(self, train_path="data/subtask1_train/demo.txt",
+    def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt",
                  dev_path="data/subtask1_test/demo_test.json", vocab=None):
         self.train_data = CustomNerDataset(train_path, vocab=vocab)
-        self.dev_data = CustomNerDataset(dev_path, vocab=self.train_data.char2id, tags=self.train_data.label2id)
-        # self.train_size = int(len(self.train_data) * 0.8)
-        # self.validate_size = int(len(self.train_data) * 0.2)
-        # self.test_size = len(self.train_data) - self.validate_size - self.train_size
-        #
-        # self.train_dataset, self.validate_dataset, self.test_dataset = \
-        #     torch.utils.data.random_split(self.train_data, [self.train_size, self.validate_size, self.test_size])
+        # self.eval_data = CustomNerDataset(dev_path,
+        #                                   vocab=self.train_data.char2id,
+        #                                   tags=self.train_data.label2id)
+
+        self.train_size = int(len(self.train_data) * 0.8)
+        self.validate_size = int(len(self.train_data) * 0.2)
+        self.test_size = len(self.train_data) - self.validate_size - self.train_size
+
+        self.train_dataset, self.validate_dataset, self.test_dataset = \
+            torch.utils.data.random_split(self.train_data, [self.train_size, self.validate_size, self.test_size])
 
         self.id2char = {v: k for k, v in self.train_data.char2id.items()}
         self.id2tag = {v: k for k, v in self.train_data.label2id.items()}
-        self.vocab_size = len(self.train_data.char2id) + 100
+        self.vocab_size = len(self.train_data.char2id)
         self.num_tags = len(self.train_data.label2id)
 
-        self.train_dataloader = DataLoader(self.train_data, batch_size=1,
-                                           shuffle=True, collate_fn=self.len_collate_fn)
-        self.eval_dataloader = DataLoader(self.dev_data, batch_size=1,
-                                          collate_fn=self.len_collate_fn, shuffle=True)
-        # self.test_dataloader = DataLoader(self.test_dataset, batch_size=20,
-        #                                   collate_fn=self.len_collate_fn, shuffle=True)
+        # self.train_dataloader = DataLoader(self.train_data, batch_size=1,
+        #                                    shuffle=False, collate_fn=self.len_collate_fn)
+        # self.eval_dataloader = DataLoader(self.eval_data, batch_size=1, collate_fn=self.len_collate_fn,
+        #                                   shuffle=False)
+
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=5,
+                                           shuffle=False, collate_fn=self.len_collate_fn)
+        self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=2,
+                                          collate_fn=self.len_collate_fn, shuffle=False)
 
     def len_collate_fn(self, batch_data):
         global chars_seged, labels_seged
@@ -279,11 +296,11 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
             chars_seged_all.append(juhao_line_char)
             if len(juhao_line_char) > 1:
                 for a in range(len(juhao_line_char)):
-                    if a < len(juhao_line_char) - 3:
-                        chars_seged.append(chars[i][juhao_line_char[a] + 1: juhao_line_char[a + 3] + 1])
+                    if a < len(juhao_line_char) - 5:
+                        chars_seged.append(chars[i][juhao_line_char[a] + 1: juhao_line_char[a + 5] + 1])
             elif len(juhao_line_char) == 1:
                 chars_seged.append(torch.tensor([juhao_index]))
-
+        # print('one')
         # 每一个line中的相邻两个句号的间隔距离
         chars_seged_input = []
         line_len_juhao_all = []
@@ -301,15 +318,15 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
         # 切分后的每个子line的长度
         for i in range(len(chars_seged)):
             max_seq_lens.append(len(chars_seged[i]))
-
+        # print('there')
         # 以句号切分labels
         labels_seged = []
         for i in range(len(chars_seged_all)):
             for j in range(len(chars_seged_all[i])):
-                if j < len(chars_seged_all[i]) - 3:
+                if j < len(chars_seged_all[i]) - 5:
                     labels_seged.append(
-                        labels[i][chars_seged_all[i][j]: chars_seged_all[i][j + 3]])
-
+                        labels[i][chars_seged_all[i][j]: chars_seged_all[i][j + 5]])
+        # print('two')
         if torch.cuda.is_available():
             for i in range(len(chars_seged)):
                 if len(chars_seged[i]) > 512:
@@ -323,8 +340,10 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
 
         chars_seged = pad_sequence(chars_seged, batch_first=True, padding_value=0)
         labels_seged = pad_sequence(labels_seged, batch_first=True, padding_value=0)
-        print("chars_seged_even:", chars_seged.size())
-        print("chars_seged_even:", labels_seged.size())
+        # print("chars_seged_even:", chars_seged)
+        # print("chars_seged_even:", labels_seged)
+        # print("chars_seged_even:", chars_seged.size())
+        # print("chars_seged_even:", labels_seged.size())
         return chars_seged, labels_seged, torch.LongTensor(max_seq_lens)
 
 
