@@ -17,7 +17,7 @@ eval_dataloader = train_dev_data.eval_dataloader
 
 vocab_size = train_dev_data.vocab_size
 num_tags = train_dev_data.num_tags
-lr = 2e-5
+lr = 2e-4
 embedding_size = 312
 hidden_size = 128
 
