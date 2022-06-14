@@ -17,7 +17,7 @@ class CustomNerDataset(Dataset):
         self.PAD = "[PAD]"
         self.UNK = "[UNK]"
         # print("file_path:", file_path)
-        print("voca_ininb:", vocab)
+        # print("voca_ininb:", vocab)
         if vocab:
             self.char2id = vocab
         else:
@@ -242,14 +242,14 @@ class CustomNerDataset(Dataset):
 
 class TrainDevData:  # subtask1_test_set_with_answer.json
     def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt",
-                 dev_path="data/subtask1_test/demo_test.json", vocab=None):
+                 dev_path="data/subtask1_train/subtask1_training_part1.txt", vocab=None):
         self.train_data = CustomNerDataset(train_path, vocab=vocab)
         # self.eval_data = CustomNerDataset(dev_path,
         #                                   vocab=self.train_data.char2id,
         #                                   tags=self.train_data.label2id)
 
-        self.train_size = int(len(self.train_data) * 0.8)
-        self.validate_size = int(len(self.train_data) * 0.2)
+        self.train_size = int(len(self.train_data) * 0.7)
+        self.validate_size = int(len(self.train_data) * 0.3)
         self.test_size = len(self.train_data) - self.validate_size - self.train_size
 
         self.train_dataset, self.validate_dataset, self.test_dataset = \
@@ -260,15 +260,15 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
         self.vocab_size = len(self.train_data.char2id)
         self.num_tags = len(self.train_data.label2id)
 
-        # self.train_dataloader = DataLoader(self.train_data, batch_size=1,
-        #                                    shuffle=False, collate_fn=self.len_collate_fn)
-        # self.eval_dataloader = DataLoader(self.eval_data, batch_size=1, collate_fn=self.len_collate_fn,
-        #                                   shuffle=False)
+        self.train_dataloader = DataLoader(self.train_data, batch_size=5,
+                                           shuffle=True, collate_fn=self.len_collate_fn)
+        self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=5, collate_fn=self.len_collate_fn,
+                                          shuffle=True)
 
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=5,
-                                           shuffle=False, collate_fn=self.len_collate_fn)
-        self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=2,
-                                          collate_fn=self.len_collate_fn, shuffle=False)
+        # self.train_dataloader = DataLoader(self.train_dataset, batch_size=5,
+        #                                    shuffle=True, collate_fn=self.len_collate_fn)
+        # self.eval_dataloader = DataLoader(self.validate_dataset, batch_size=2,
+        #                                   collate_fn=self.len_collate_fn, shuffle=True)
 
     def len_collate_fn(self, batch_data):
         global chars_seged, labels_seged
