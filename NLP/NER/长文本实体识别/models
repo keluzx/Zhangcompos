@@ -6,6 +6,7 @@ from torchcrf import CRF
 from transformers import RobertaModel, AutoModel, AlbertModel, BertModel
 # from ernie.modeling_ernie import ErnieModel, ErnieModelForSequenceClassification
 import torch.nn.functional as F
+
 # from pytorch_transformers import XLNetModel
 
 
@@ -463,7 +464,7 @@ class LstmCRFAttnPosAllModel(nn.Module):
         input_packed = pack_padded_sequence(input_tensor, seq_lens, batch_first=self.batch_first, enforce_sorted=False)
         output_lstm, hidden = self.lstm(input_packed)
         output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
-                                                 total_length=total_length)
+                                                  total_length=total_length)
 
         # print("output_lstm:", output_lstm.size())
         # print("final_hidden:", hidden[0].size())
@@ -514,13 +515,14 @@ class LstmCRFAttnPosAllModel(nn.Module):
 class LstmCRFAttnPosOnlyModel(nn.Module):
     def __init__(self, embedding_size=256, num_tags=25,
                  vocab_size=5000, hidden_size=128,
-                 batch_first=True, dropout=0.1):
+                 batch_first=True, dropout=0.3):
         super(LstmCRFAttnPosOnlyModel, self).__init__()
         self.batch_first = batch_first
         self.model = AlbertModel.from_pretrained('clue/albert_chinese_tiny')
         self.lstm = nn.LSTM(embedding_size, hidden_size // 2,
                             num_layers=2, batch_first=True,
                             bidirectional=True, dropout=dropout)
+        self.enc_self_attn = MultiHeadAttention()
         self.fc = nn.Linear(128, num_tags)
         self.crf = CRF(num_tags, batch_first=True)
 
@@ -532,10 +534,13 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
         input_packed = pack_padded_sequence(input_tensor.last_hidden_state, seq_lens, batch_first=self.batch_first,
                                             enforce_sorted=False)
         output_lstm, hidden = self.lstm(input_packed)
+
         output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
                                                   total_length=total_length)
-        attn_output = self.attention_net(output_lstm, hidden[1], hidden[0])
-        # print("input_tensor_after:", input_tensor)
+
+        enc_outputs, attn = self.enc_self_attn(output_lstm, output_lstm, output_lstm)
+        attn_output = self.attention_net(enc_outputs, hidden[1], hidden[0])
+        # print("output_lstm:", output_lstm.size())
         input_tensor = self.fc(attn_output)
         return input_tensor
 
@@ -590,6 +595,59 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
         predicted_index = self.crf.decode(out, mask)
         # print("predicted_index:", predicted_index)
         return predicted_index
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self):
+        super(MultiHeadAttention, self).__init__()
+        self.d_model = 128
+        self.d_k = 16
+        self.d_v = 16
+        self.n_heads = 4
+        self.W_Q = nn.Linear(self.d_model, self.d_k * self.n_heads)
+        self.W_K = nn.Linear(self.d_model, self.d_k * self.n_heads)
+        self.W_V = nn.Linear(self.d_model, self.d_v * self.n_heads)
+        self.linear = nn.Linear(self.n_heads * self.d_v, self.d_model)
+        self.layer_norm = nn.LayerNorm(self.d_model)
+
+    def forward(self, Q, K, V):
+        # print("q_size:", Q.size())
+        # q: [batch_size x len_q x d_model], k: [batch_size x len_k x d_model], v: [batch_size x len_k x d_model]
+        residual, batch_size = Q, Q.size(0)
+        # (B, S, D) -proj-> (B, S, D) -split-> (B, S, H, W) -trans-> (B, H, S, W)
+        q_s = self.W_Q(Q).view(batch_size, -1, self.n_heads, self.d_k).transpose(1,
+                                                                                 2)  # q_s: [batch_size x n_heads x len_q x d_k]
+        k_s = self.W_K(K).view(batch_size, -1, self.n_heads, self.d_k).transpose(1,
+                                                                       2)  # k_s: [batch_size x n_heads x len_k x d_k]
+        v_s = self.W_V(V).view(batch_size, -1, self.n_heads, self.d_v).transpose(1,
+                                                                       2)  # v_s: [batch_size x n_heads x len_k x d_v]
+
+        # attn_mask = attn_mask.unsqueeze(1).repeat(1, self.n_heads, 1,
+        #                                           1)  # attn_mask : [batch_size x n_heads x len_q x len_k]
+
+        # context: [batch_size x n_heads x len_q x d_v], attn: [batch_size x n_heads x len_q(=len_k) x len_k(=len_q)]
+        context, attn = ScaledDotProductAttention()(q_s, k_s, v_s)
+        # print('Here')
+        context = context.transpose(1, 2).contiguous().view(batch_size, -1,
+                                                            self.n_heads * self.d_v)  # context: [batch_size x len_q x n_heads * d_v]
+        output = self.linear(context)
+        return self.layer_norm(output + residual), attn  # output: [batch_size x len_q x d_model]
+
+
+class ScaledDotProductAttention(nn.Module):
+    def __init__(self):
+        super(ScaledDotProductAttention, self).__init__()
+        self.d_k = 16
+
+    def forward(self, Q, K, V):
+        scores = torch.matmul(Q, K.transpose(-1, -2)) / np.sqrt(
+            self.d_k)  # scores : [batch_size x n_heads x len_q(=len_k) x len_k(=len_q)]
+        # scores.masked_fill_(attn_mask, -1e9)  # Fills elements of self tensor with value where mask is one.
+        attn = nn.Softmax(dim=-1)(scores)
+        context = torch.matmul(attn, V)
+        return context, attn
+
+
 
 
 class LstmCRFAttnPosTFIDFModel(nn.Module):
@@ -710,7 +768,7 @@ class GRUCRFAttnModel(nn.Module):
 
         output_lstm, hidden = self.gru(input_packed)
         output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
-                                                 total_length=total_length)
+                                                  total_length=total_length)
 
         # print("output_lstm:", output_lstm.size())
         # print("final_hidden:", hidden.size())
@@ -787,7 +845,7 @@ class LstmAttnCRFModel(nn.Module):
         input_packed = pack_padded_sequence(input_tensor, seq_lens, batch_first=self.batch_first, enforce_sorted=False)
         output_lstm, hidden = self.lstm(input_packed)
         output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
-                                                 total_length=total_length)
+                                                  total_length=total_length)
 
         # print("output_lstm:", output_lstm.size())
         # print("final_hidden:", hidden[0].size())
