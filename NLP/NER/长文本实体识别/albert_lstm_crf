@@ -3,8 +3,12 @@ from model import LstmCRFAttnPosOnlyModel
 import collections
 from transformers import AutoTokenizer, BertTokenizer
 from lstm_crf import decode_prediction
+import os
+from torch.nn import DataParallel
+
 
 device_lstm_crf_attn_pos_only = torch.device("cuda:6")
+# gpus = [6, 1, 2]
 
 tokenizer = BertTokenizer.from_pretrained('clue/albert_chinese_tiny')
 vocab = tokenizer.get_vocab()
@@ -19,10 +23,12 @@ vocab_size = train_dev_data.vocab_size
 num_tags = train_dev_data.num_tags
 lr = 2e-4
 embedding_size = 312
-hidden_size = 128
+hidden_size = 64
 
 model = LstmCRFAttnPosOnlyModel(embedding_size=embedding_size, hidden_size=hidden_size,
                                 vocab_size=vocab_size, num_tags=num_tags)
+# model = DataParallel(net, device_ids=gpus, output_device=gpus[0])
+model.to(device_lstm_crf_attn_pos_only)
 
 params = [{"params": [], 'lr': lr}, {'params': [], 'lr': 100 * lr}]
 for p in model.named_parameters():
@@ -84,14 +90,12 @@ def eval(model=model, eval_dataloader=eval_dataloader):
 def train(model=model, train_loader=train_dataloader, optimizer=optimizer, scheduler=scheduler, epoch=1000):
     model.train()
     # if torch.cuda.is_available():
-    model = model.to(device_lstm_crf_attn_pos_only)
+    model.to(device_lstm_crf_attn_pos_only)
     for i in range(epoch):
         epoch_loss = 0
         epoch_count = 0
         before = -1
         for index, (input_tensor, tags, seq_lens) in enumerate(train_loader):
-
-            # if torch.cuda.is_available():
             input_tensor = input_tensor.to(device_lstm_crf_attn_pos_only)
             tags = tags.cuda()
             loss = model.compute_loss(input_tensor, tags, seq_lens)
@@ -118,3 +122,4 @@ def train(model=model, train_loader=train_dataloader, optimizer=optimizer, sched
 
 if __name__ == '__main__':
     train()
+
