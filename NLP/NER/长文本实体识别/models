@@ -514,11 +514,104 @@ class LstmCRFAttnPosAllModel(nn.Module):
 
 class LstmCRFAttnPosOnlyModel(nn.Module):
     def __init__(self, embedding_size=256, num_tags=25,
-                 vocab_size=5000, hidden_size=128,
-                 batch_first=True, dropout=0.3):
+                 vocab_size=5000, hidden_size=256,
+                 batch_first=True, dropout=0):
         super(LstmCRFAttnPosOnlyModel, self).__init__()
         self.batch_first = batch_first
         self.model = AlbertModel.from_pretrained('clue/albert_chinese_tiny')
+        self.lstm = nn.LSTM(embedding_size, hidden_size // 2,
+                            num_layers=2, batch_first=True,
+                            bidirectional=True, dropout=dropout)
+        self.enc_self_attn = MultiHeadAttention()
+        self.fc = nn.Linear(64, num_tags)
+        self.crf = CRF(num_tags, batch_first=True)
+
+    def forward(self, input_tensor, seq_lens, tfidf_weight):
+        tfidf_weight = tfidf_weight.to(device_lstm_crf_attn_pos_only)
+        # print("input_tensor:", input_tensor.size())
+        # print("tfidf_weight:", tfidf_weight.size())
+        total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
+        input_tensor = self.model(input_tensor)
+        # tfidf_weight = tfidf_weight.repeat(1, 1, 312)
+        # print("input_tensor:", input_tensor.last_hidden_state.size())
+        # print("tfidf_weight:", tfidf_weight.size())
+        # input_tensor.last_hidden_state = tfidf_weight + input_tensor.last_hidden_state
+        input_packed = pack_padded_sequence(input_tensor.last_hidden_state, seq_lens, batch_first=self.batch_first,
+                                            enforce_sorted=False)
+        output_lstm, hidden = self.lstm(input_packed)
+        # print("output_lstm:", output_lstm.data.size())
+        output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
+                                                  total_length=total_length)
+        # print("output_lstm:", output_lstm.size())
+        # print('here')
+        enc_outputs, attn = self.enc_self_attn(output_lstm, output_lstm, output_lstm)
+        # print("enc_outputs:", enc_outputs.size())
+        attn_output = self.attention_net(enc_outputs, hidden[1], hidden[0])
+        # print("attn_output:", attn_output.size())
+        input_tensor = self.fc(attn_output)
+        tfidf_weight = tfidf_weight.unsqueeze(2).repeat(1, 1, 25)
+        # print("input_tensor_end:", input_tensor.size())
+        # print("tfidf_weight_end:", tfidf_weight.size())
+        # print("input_tensor:", input_tensor.size())
+        input_tensor = input_tensor + tfidf_weight
+        return input_tensor
+
+    def attention_net(self, output_lstm, cell_hidden, state_hidden):
+        # print("cell_hidden:", cell_hidden.size())  # [4, 100, 128]
+        hidden_1 = cell_hidden.view(-1, 64, 2)  # hidden 为每一个batch的最后一个字符
+        hidden_2 = state_hidden.view(-1, 64, 2)
+        # print("hidden_1:", hidden_1.size())
+        # print("output_lstm:", output_lstm.size())
+        attn_weights_1 = torch.bmm(output_lstm, hidden_1).squeeze(2)  # attn_weights : [batch_size, n_step]
+        attn_weights_2 = torch.bmm(output_lstm, hidden_2).squeeze(2)
+        # print("attn_weights:", attn_weights_self.size())
+        soft_attn_weights_1 = F.softmax(attn_weights_1, 1)
+        soft_attn_weights_2 = F.softmax(attn_weights_2, 1)
+        # print("soft_attn_weights_1:", soft_attn_weights_1.size())
+        soft_attn_weights_1 = soft_attn_weights_1.repeat(1, 1, 32)
+        soft_attn_weights_2 = soft_attn_weights_2.repeat(1, 1, 32)
+
+        context = output_lstm + soft_attn_weights_1 * 0.2 + soft_attn_weights_2
+        # print("context:", context.size())
+        # print('here')
+        return context
+
+    def compute_loss(self, input_tensor, tags, seq_lens, tfidf_weight):
+        mask = torch.zeros(input_tensor.shape[:2])
+        mask = mask.to(device_lstm_crf_attn_pos_only)
+        mask = torch.greater(input_tensor, mask)
+        # print("mask_shape_1:", mask)                 .type(torch.cuda.ByteTensor)
+        # print("tags:", tags.size())
+        output_fc = self.forward(input_tensor, seq_lens, tfidf_weight)
+        # print("output_fc:", output_fc.size())
+        # print("tags:", tags.size())
+        loss = -self.crf(output_fc, tags, mask, reduction='mean')
+        # print("loss:", loss)
+        return loss
+
+    def decode(self, input_tensor, seq_lens, tfidf_weight):
+        # print('true_decode__')
+        out = self.forward(input_tensor, seq_lens, tfidf_weight)
+        # print("out:", out)
+        # print('decode')
+        mask = torch.zeros(input_tensor.shape[:2])
+        # print('decode_next')
+        mask = mask.to(device_lstm_crf_attn_pos_only)
+        mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
+        # print("mask:", mask.size())
+        # print("out:", out.size())
+        predicted_index = self.crf.decode(out, mask)
+        # print("predicted_index:", predicted_index)
+        return predicted_index
+
+
+class RobertLstmCRFAttnPosOnlyModel(nn.Module):
+    def __init__(self, embedding_size=256, num_tags=25,
+                 vocab_size=5000, hidden_size=256,
+                 batch_first=True, dropout=0.4):
+        super(RobertLstmCRFAttnPosOnlyModel, self).__init__()
+        self.batch_first = batch_first
+        self.model = BertModel.from_pretrained('hfl/chinese-roberta-wwm-ext')
         self.lstm = nn.LSTM(embedding_size, hidden_size // 2,
                             num_layers=2, batch_first=True,
                             bidirectional=True, dropout=dropout)
@@ -528,49 +621,48 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
 
     def forward(self, input_tensor, seq_lens):
         # print("input_tensor:", input_tensor)
-        # print("input_tensor_size:", input_tensor.size())
+        # print("input_tensor_first:", input_tensor.size())
         total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
         input_tensor = self.model(input_tensor)
         input_packed = pack_padded_sequence(input_tensor.last_hidden_state, seq_lens, batch_first=self.batch_first,
                                             enforce_sorted=False)
         output_lstm, hidden = self.lstm(input_packed)
-
+        # print("output_lstm:", output_lstm.data.size())
         output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
                                                   total_length=total_length)
-
-        enc_outputs, attn = self.enc_self_attn(output_lstm, output_lstm, output_lstm)
-        attn_output = self.attention_net(enc_outputs, hidden[1], hidden[0])
         # print("output_lstm:", output_lstm.size())
+        # print('here')
+        enc_outputs, attn = self.enc_self_attn(output_lstm, output_lstm, output_lstm)
+        # print("enc_outputs:", enc_outputs.size())
+        attn_output = self.attention_net(enc_outputs, hidden[1], hidden[0])
+        # print("attn_output:", attn_output.size())
         input_tensor = self.fc(attn_output)
+        # print("input_tensor_end:", input_tensor.size())
         return input_tensor
 
     def attention_net(self, output_lstm, cell_hidden, state_hidden):
-        # print("output_lstm:", output_lstm.size())  # [4, 100, 128]
-        hidden_1 = cell_hidden.view(-1, 128, 2)  # hidden 为每一个batch的最后一个字符
-        hidden_2 = state_hidden.view(-1, 128, 2)
-        # print("hidden:", hidden.size())
-        # attn_weights_self = torch.bmm(output_lstm, output_lstm.transpose(0, 1)[-1].unsqueeze(2).repeat(1, 1, 128))
+        # print("cell_hidden:", cell_hidden.size())  # [4, 100, 128]
+        hidden_1 = cell_hidden.view(-1, 64, 2)  # hidden 为每一个batch的最后一个字符
+        hidden_2 = state_hidden.view(-1, 64, 2)
+        # print("hidden_1:", hidden_1.size())
+        # print("output_lstm:", output_lstm.size())
         attn_weights_1 = torch.bmm(output_lstm, hidden_1).squeeze(2)  # attn_weights : [batch_size, n_step]
         attn_weights_2 = torch.bmm(output_lstm, hidden_2).squeeze(2)
         # print("attn_weights:", attn_weights_self.size())
         soft_attn_weights_1 = F.softmax(attn_weights_1, 1)
         soft_attn_weights_2 = F.softmax(attn_weights_2, 1)
-        # soft_attn_weights_self = F.softmax(attn_weights_self, 1)
-        # output_lstm = F.softmax(output_lstm, 1)
-        # print(soft_attn_weights.size())
-        soft_attn_weights_1 = soft_attn_weights_1.repeat(1, 1, 64)
-        soft_attn_weights_2 = soft_attn_weights_2.repeat(1, 1, 64)
-        # print("soft_attn_weights:", soft_attn_weights.size())
-        context = output_lstm + soft_attn_weights_1 + soft_attn_weights_2
-        # context = torch.bmm(attn_weights, context.transpose(1, 2)) '+ soft_attn_weights_self'
-        # output_lstm = output_lstm.tranpose(0, 1)[-1].unsqueeze(2).repeat(1, 1, 128)
-        # context = torch.bmm(output_lstm, context)
+        # print("soft_attn_weights_1:", soft_attn_weights_1.size())
+        soft_attn_weights_1 = soft_attn_weights_1.repeat(1, 1, 32)
+        soft_attn_weights_2 = soft_attn_weights_2.repeat(1, 1, 32)
+
+        context = output_lstm + soft_attn_weights_1 * 0.2 + soft_attn_weights_2 * 0.8
         # print("context:", context.size())
+        # print('here')
         return context
 
     def compute_loss(self, input_tensor, tags, seq_lens):
         mask = torch.zeros(input_tensor.shape[:2])
-        mask = mask.to(device_lstm_crf_attn_pos_only)
+        mask = mask.to(device_gru_crf_attn_pos)
         mask = torch.greater(input_tensor, mask)
         # print("mask_shape_1:", mask)                 .type(torch.cuda.ByteTensor)
         # print("tags:", tags.size())
@@ -588,9 +680,9 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
         # print('decode')
         mask = torch.zeros(input_tensor.shape[:2])
         # print('decode_next')
-        mask = mask.to(device_lstm_crf_attn_pos_only)
-        mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
-        # print("mask:", mask.size())
+        mask = mask.to(device_gru_crf_attn_pos)
+        mask = torch.greater(input_tensor, mask)
+        # print("mask:", mask.size())  .type(torch.cuda.ByteTensor)
         # print("out:", out.size())
         predicted_index = self.crf.decode(out, mask)
         # print("predicted_index:", predicted_index)
@@ -600,10 +692,10 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
 class MultiHeadAttention(nn.Module):
     def __init__(self):
         super(MultiHeadAttention, self).__init__()
-        self.d_model = 128
-        self.d_k = 16
-        self.d_v = 16
-        self.n_heads = 4
+        self.d_model = 64
+        self.d_k = 25
+        self.d_v = 25
+        self.n_heads = 16
         self.W_Q = nn.Linear(self.d_model, self.d_k * self.n_heads)
         self.W_K = nn.Linear(self.d_model, self.d_k * self.n_heads)
         self.W_V = nn.Linear(self.d_model, self.d_v * self.n_heads)
@@ -622,9 +714,6 @@ class MultiHeadAttention(nn.Module):
         v_s = self.W_V(V).view(batch_size, -1, self.n_heads, self.d_v).transpose(1,
                                                                        2)  # v_s: [batch_size x n_heads x len_k x d_v]
 
-        # attn_mask = attn_mask.unsqueeze(1).repeat(1, self.n_heads, 1,
-        #                                           1)  # attn_mask : [batch_size x n_heads x len_q x len_k]
-
         # context: [batch_size x n_heads x len_q x d_v], attn: [batch_size x n_heads x len_q(=len_k) x len_k(=len_q)]
         context, attn = ScaledDotProductAttention()(q_s, k_s, v_s)
         # print('Here')
@@ -637,7 +726,7 @@ class MultiHeadAttention(nn.Module):
 class ScaledDotProductAttention(nn.Module):
     def __init__(self):
         super(ScaledDotProductAttention, self).__init__()
-        self.d_k = 16
+        self.d_k = 64
 
     def forward(self, Q, K, V):
         scores = torch.matmul(Q, K.transpose(-1, -2)) / np.sqrt(
