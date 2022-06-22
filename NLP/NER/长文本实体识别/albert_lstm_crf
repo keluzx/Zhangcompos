@@ -44,10 +44,10 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.9)
 def eval(model=model, eval_dataloader=eval_dataloader):
     model.eval()
     result = {}
-    for index, (input_tensor, true_tags, seq_lens) in enumerate(eval_dataloader):
+    for index, (input_tensor, true_tags, seq_lens, tfidf_weight) in enumerate(eval_dataloader):
         # if torch.cuda.is_available():
         input_tensor = input_tensor.to(device_lstm_crf_attn_pos_only)
-        predict_tags = model.decode(input_tensor, seq_lens)
+        predict_tags = model.decode(input_tensor, seq_lens, tfidf_weight)
         # print('eval')
         true_tags = list(true_tags.numpy())
         input_tensor = list(input_tensor.cpu().numpy())
@@ -95,10 +95,12 @@ def train(model=model, train_loader=train_dataloader, optimizer=optimizer, sched
         epoch_loss = 0
         epoch_count = 0
         before = -1
-        for index, (input_tensor, tags, seq_lens) in enumerate(train_loader):
+        for index, (input_tensor, tags, seq_lens, tfidf_weight) in enumerate(train_loader):
+            # print("input_tensor_for:", input_tensor.size())
+            # print("tfidf_weight_for:", tfidf_weight)
             input_tensor = input_tensor.to(device_lstm_crf_attn_pos_only)
             tags = tags.cuda()
-            loss = model.compute_loss(input_tensor, tags, seq_lens)
+            loss = model.compute_loss(input_tensor, tags, seq_lens, tfidf_weight)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -122,4 +124,3 @@ def train(model=model, train_loader=train_dataloader, optimizer=optimizer, sched
 
 if __name__ == '__main__':
     train()
-
