@@ -60,6 +60,7 @@ def eval(model=model, eval_dataloader=eval_dataloader):
             pre_result = decode_prediction(chars, pre)
             true_result = decode_prediction(chars, true)
             for type, cnt in pre_result.items():
+                # print("cnt:", cnt)
                 if type not in result:
                     result[type] = [0, 0, 0]
                 result[type][1] += len(cnt)
@@ -81,6 +82,9 @@ def eval(model=model, eval_dataloader=eval_dataloader):
         result[type].append(round(recall, 3))
         result[type].append(round(f1, 3))
     result = [(k, v) for k, v in result.items()]
+    # print("result:", result)
+    # for v in result:
+    #     print("v_index:", v)
     macro_f1 = sum([v[1][-1] for v in result]) / len(result)
     print("macrof1 {}".format(macro_f1))
     result.sort()
