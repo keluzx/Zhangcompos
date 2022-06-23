@@ -15,11 +15,10 @@ device_lstm_crf = torch.device("cuda:0")
 device_bert_crf = torch.device("cuda:2")
 device_bert_lstm_crf_attn_pos_only = torch.device("cuda:2")
 device_bert_lstm_crf = torch.device("cuda:2")
-device_lstm_crf_attn_pos_only = torch.device("cuda:6")
+device_lstm_crf_attn_pos_only = torch.device("cuda:0")
 device_lstm_crf_attn = torch.device("cuda:6")
 device_gru_crf_attn = torch.device("cuda:5")
 device_gru_crf_attn_pos = torch.device("cuda:7")
-
 
 
 class LstmCRFModel(nn.Module):
@@ -378,49 +377,121 @@ class LSTMBERTNerModel(nn.Module):
 #         return predicted_index
 
 
+class LstmCRFAttnPosAllModel(nn.Module):
+    def __init__(self, embedding_size=256, num_tags=25,
+                 vocab_size=3675, hidden_size=128,
+                 batch_first=True, dropout=0.2):
+        super(LstmCRFAttnPosAllModel, self).__init__()
+        self.batch_first = batch_first
+        self.embedding = nn.Embedding(vocab_size, embedding_size)
+        self.embedding_attn = nn.Embedding(vocab_size, hidden_size)
+        self.lstm = nn.LSTM(embedding_size, hidden_size // 2,
+                            num_layers=2, batch_first=True,
+                            bidirectional=True, dropout=dropout)
+        # self.cnn = nn.Conv2d()
+        for name, param in self.lstm.named_parameters():
+            if name.startswith("weight"):
+                nn.init.xavier_normal_(param)
+            else:
+                nn.init.zeros_(param)
+
+        self.fc = nn.Linear(128, num_tags)
+        self.crf = CRF(num_tags, batch_first=True)
+
+    def forward(self, input_tensor, seq_lens):
+        # print("input_tensor:", input_tensor)
+        input_tensor = self.embedding(input_tensor)
+        total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
+        input_packed = pack_padded_sequence(input_tensor, seq_lens, batch_first=self.batch_first, enforce_sorted=False)
+        output_lstm, hidden = self.lstm(input_packed)
+        output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
+                                                  total_length=total_length)
+
+        # print("output_lstm:", output_lstm.size())
+        # print("final_hidden:", hidden[0].size())
+        attn_output = self.attention_net(output_lstm, hidden[0])
+        # print("attn_output:", attn_output.size())
+        output_fc = self.fc(attn_output)
+        # print("output_fc:", output_fc.size())
+
+        return output_fc
+
+    def attention_net(self, output_lstm, final_hidden):
+        # print("final_hidden:", final_hidden.size())  # [4, 100, 128]
+        hidden = final_hidden.view(-1, 128, 2)  # hidden 为每一个batch的最后一个字符
+        # print('hidden:', hidden.size())
+        attn_weights = torch.bmm(output_lstm, hidden).squeeze(2)  # attn_weights : [batch_size, n_step]
+        # print("attn_weights:", attn_weights.size())
+
+        soft_attn_weights = F.softmax(attn_weights, 1)
+        # print(soft_attn_weights.size())
+        soft_attn_weights = soft_attn_weights.repeat(1, 1, 64)
+        # print("soft_attn_weights:", soft_attn_weights.size())
+        context = output_lstm + soft_attn_weights
+        # context = torch.bmm(attn_weights, context.transpose(1, 2))
+        # print("context:", context.size())
+        return context
+
+    def compute_loss(self, input_tensor, tags, seq_lens):
+        mask = torch.zeros(input_tensor.shape[:2])
+        mask = mask.to(device_lstm_crf_attn)
+        mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
+        # print("mask_shape_1:", mask)
+        # print("tags:", tags.size())
+        output_fc = self.forward(input_tensor, seq_lens)
+
+        loss = -self.crf(output_fc, tags, mask, reduction='mean')
+        return loss
+
+    def decode(self, input_tensor, seq_lens):
+        out = self.forward(input_tensor, seq_lens)
+        mask = torch.zeros(input_tensor.shape[:2])
+        mask = mask.to(device_lstm_crf_attn)
+        mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
+
+        predicted_index = self.crf.decode(out, mask)
+        return predicted_index
+
+
 class LstmCRFAttnPosOnlyModel(nn.Module):
     def __init__(self, embedding_size=256, num_tags=25,
-                 vocab_size=5000, hidden_size=256,
-                 batch_first=True, dropout=0.01):
+                 vocab_size=35000, hidden_size=256,
+                 batch_first=True, dropout=0.):
         super(LstmCRFAttnPosOnlyModel, self).__init__()
         self.batch_first = batch_first
-        self.emb = nn.Embedding(vocab_size, 312)
+        self.emb_long = nn.Embedding(vocab_size, 312)
+        self.emb_short = nn.Embedding(vocab_size, 25)
         self.model = AlbertModel.from_pretrained('clue/albert_chinese_tiny')
         self.lstm = nn.LSTM(embedding_size, hidden_size // 2,
                             num_layers=2, batch_first=True,
                             bidirectional=True, dropout=dropout)
         self.enc_self_attn = MultiHeadAttention()
         self.fc = nn.Linear(64, num_tags)
-        self.norm = nn.LayerNorm(312)
         self.crf = CRF(num_tags, batch_first=True)
 
     def forward(self, input_tensor, seq_lens, tfidf_weight, pos_weight):
+        # print('here')
         tfidf_weight = tfidf_weight.to(device_lstm_crf_attn_pos_only)
         pos_weight = pos_weight.to(device_lstm_crf_attn_pos_only)
-        # seg_weight = seg_weight.to(device_lstm_crf_attn_pos_only)
-        # print("seg_weight:", seg_weight)   + self.emb(seg_weight)
-        embedding = self.emb(tfidf_weight) + self.emb(pos_weight)
-        embedding = self.norm(embedding)
-        # print("input_tensor:", input_tensor.size())
-        # print("embedding:", embedding.size())
+
+        embedding = self.emb_long(tfidf_weight) + self.emb_long(pos_weight)
+        # print('here')
         total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
         input_tensor = self.model(input_tensor)
-
-        input_tensor.last_hidden_state = input_tensor.last_hidden_state + embedding
-        input_packed = pack_padded_sequence(input_tensor.last_hidden_state, seq_lens, batch_first=self.batch_first,
+        input_packed = pack_padded_sequence(input_tensor.last_hidden_state + embedding, seq_lens, batch_first=self.batch_first,
                                             enforce_sorted=False)
         output_lstm, hidden = self.lstm(input_packed)
         output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
                                                   total_length=total_length)
         # print('here')
-        # print("output_lstm:", output_lstm.size())
         enc_outputs, attn = self.enc_self_attn(output_lstm, output_lstm, output_lstm)
         attn_output = self.attention_net(enc_outputs, hidden[1], hidden[0])
         input_tensor = self.fc(enc_outputs)
-        # tfidf_weight = tfidf_weight.unsqueeze(2).repeat(1, 1, 25)
-        # pos_weight = pos_weight.unsqueeze(2).repeat(1, 1, 25)
-        # # seg_weight = seg_weight.unsqueeze(2).repeat(1, 1, 25)
-        # input_tensor = input_tensor + (tfidf_weight + pos_weight)
+        tfidf_weight = self.emb_short(tfidf_weight)
+        pos_weight = self.emb_short(pos_weight)
+        # print('tfidf_weight:', tfidf_weight)
+        input_tensor += tfidf_weight + pos_weight
+
         return input_tensor
 
     def attention_net(self, output_lstm, cell_hidden, state_hidden):
@@ -435,32 +506,26 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
         soft_attn_weights_1 = F.softmax(attn_weights_1, 1)
         soft_attn_weights_2 = F.softmax(attn_weights_2, 1)
         # print("soft_attn_weights_1:", soft_attn_weights_1.size())
-        # soft_attn_weights_1 = self.
         soft_attn_weights_1 = soft_attn_weights_1.repeat(1, 1, 32)
         soft_attn_weights_2 = soft_attn_weights_2.repeat(1, 1, 32)
 
-        context = output_lstm + soft_attn_weights_1 + soft_attn_weights_2
+        context = output_lstm + soft_attn_weights_1 * 0.2 + soft_attn_weights_2
         # print("context:", context.size())
-        context = nn.functional.softmax(context)
         # print('here')
-        return context * 0.1
+        return context
 
     def compute_loss(self, input_tensor, tags, seq_lens, tfidf_weight, pos_weight):
         mask = torch.zeros(input_tensor.shape[:2])
         mask = mask.to(device_lstm_crf_attn_pos_only)
-        mask = torch.greater(input_tensor, mask)
-        # print("mask_shape_1:", mask)                 .type(torch.cuda.ByteTensor), seg_weight
-        # print("tags:", tags.size())
+        mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
         output_fc = self.forward(input_tensor, seq_lens, tfidf_weight, pos_weight)
-        # print("output_fc:", output_fc.size())
-        # print("tags:", tags.size())
         loss = -self.crf(output_fc, tags, mask, reduction='mean')
-        # print("loss:", loss)
+
         return loss
 
-    def decode(self, input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight_all):
+    def decode(self, input_tensor, seq_lens, tfidf_weight, pos_weight):
         # print('true_decode__')
-        out = self.forward(input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight_all)
+        out = self.forward(input_tensor, seq_lens, tfidf_weight, pos_weight)
         # print("out:", out)
         # print('decode')
         mask = torch.zeros(input_tensor.shape[:2])
@@ -481,6 +546,7 @@ class RobertLstmCRFAttnPosOnlyModel(nn.Module):
         super(RobertLstmCRFAttnPosOnlyModel, self).__init__()
         self.batch_first = batch_first
         self.model = BertModel.from_pretrained('hfl/chinese-roberta-wwm-ext')
+
         self.lstm = nn.LSTM(embedding_size, hidden_size // 2,
                             num_layers=2, batch_first=True,
                             bidirectional=True, dropout=dropout)
