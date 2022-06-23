@@ -75,19 +75,15 @@ class CustomNerDataset(Dataset):
                 for a in range(i[1] + 1):
                     if i[0] <= a <= i[1]:
                         temp.append(a)
-            # print("temp:", temp)
+
+            # 加入tdidf权值
             tfidf_weight = []
             for i in range(len(char_dict.keys())):
-                # print("s_e_list:", j)
-                # print("s_e_list_s:", i)
                 if i in temp:
-                    tfidf_weight.append(0.8)
-                    # print("tfidf_weight:", tfidf_weight)
+                    tfidf_weight.append(0.9)
                 else:
-                    tfidf_weight.append(-0.8)
-                    # print("tfidf_weight:", tfidf_weight)
-            # print("tfidf_weight:", len(char_dict))
-            # print("tfidf_weight:", len(tfidf_weight))
+                    tfidf_weight.append(-1.)
+
             chars = []
             for c in line['originalText']:
                 chars.append(c)
@@ -96,25 +92,23 @@ class CustomNerDataset(Dataset):
                     if c not in self.char2id:
                         self.char2id[c] = len(self.char2id)
             one_example_jieba.append(chars)
+
             start_end_dict_jieba = {}
             for i in range(len(start_end_labels)):
                 start_end_dict_jieba[i] = start_end_labels[i]
-            # print("start_end_dict_jieba:", start_end_dict_jieba)
-            # original_text += original_text.strip()
+
             original_text_chinese = ''.join(original_text)
             original_text_pos = psg.lcut(original_text_chinese)
             # print("original_text_pos:", original_text_pos)
             char_word, char_pos = [], []
             for i, j in original_text_pos:
                 char_word.append(i)
-            # print("original_text_pos:", original_text_pos)
-            # print("original_text_pos:", char_dict.keys())
+
             no_dropped_list = []
             for i in range(len(char_dict.keys())):
                 for j in s_e_list:
                     if j[0] <= i <= j[1]:
                         no_dropped_list.append(i)
-            # print("no_dropped_list:", no_dropped_list)
             original_pos = []
             for index, (word, word_pos) in enumerate(original_text_pos):
                 original_pos.append(word_pos)
@@ -129,10 +123,8 @@ class CustomNerDataset(Dataset):
 
             word_jieba = []
             word_jieba_demo = []
-            char_dropped_len = 0
-            sum_dropped_len = 0
-            # print('before_char2id:', len(self.char2id))
-            # print('original_char:', self.char2id)
+
+            # 加入词性特征
             pos_weight = []
             for index, (word, word_pos) in enumerate(original_text_pos):
                 if 'n' in word_pos:  # 名词放入word_jieba中
@@ -141,36 +133,9 @@ class CustomNerDataset(Dataset):
                 else:
                     for i in word:
                         pos_weight.append(0.1)
-            # print("pos_weight:", pos_weight)
-            # print("pos_weight:", len(pos_weight))
-            # print(len(char_dict))
-            #             # if i not in self.char2id:
-            #             #     self.char2id[i] = len(self.char2id) + char_dropped_len
-            #     elif 'w' in word_pos:  # 要丢弃的字符  'u' and 'b' and   + 'u' or 'wp' or 'ws' or 'a' in
-            #         for i in word:
-            #             if random() < 0.2 and char_dict_another[i] not in no_dropped_list:
-            #                 char_dropped_len = len(word)
-            #                 sum_dropped_len += char_dropped_len
-            #                 # if i not in self.char2id:
-            #                 #     self.char2id[i] = len(self.char2id) + char_dropped_len
-            #         # else:
-            #         #     for i in word:
-            #         #         word_jieba.append(i)
-            #         #         # if i not in self.char2id:
-            #                 #     self.char2id[i] = len(self.char2id) + char_dropped_len
-            #     else:
-            #         for i in word:
-            #             word_jieba.append(i)
-            #             # if i not in self.char2id:
-            #             #     self.char2id[i] = len(self.char2id) + char_dropped_len
-            # print('char2id:', len(self.char2id))
-            # print('word_jieba:', len(word_jieba))
-            # print("sum_dropped_len:", sum_dropped_len)
 
             for i in original_text:
                 word_jieba_demo.append(i)  # word_jieba - 词汇
-            # print("word_jieba_demo:", len(word_jieba_demo))
-            # print("word_jieba:", len(word_jieba))
 
             for sub_word_jieba in word_jieba_demo:
                 for i in sub_word_jieba:
@@ -178,10 +143,8 @@ class CustomNerDataset(Dataset):
 
             for sub_word_jieba in word_jieba:
                 for i in sub_word_jieba:
-                    # print('i_index:', i)
                     char_jieba_list.append(i)  # char_jieba_list - 单个字符
-            # print("char_jieba_list:", len(char_jieba_list))
-            # print("char_jieba_list:", len(char_jieba_list_1))
+
             chars_jieba = []
             chars_jieba_1 = []
             for c_jieba in char_jieba_list:
@@ -189,12 +152,8 @@ class CustomNerDataset(Dataset):
 
             for c_jieba in char_jieba_list_1:
                 chars_jieba_1.append(c_jieba)
-            # print("chars_jieba:", chars_jieba)
-            # print("char_jieba_listKK:", char_jieba_list)
 
             labels_jieba = ['O'] * len(chars)
-            labels_jieba_long = ['O'] * len(chars_jieba_1)
-            # print("labels_jieba_there:", labels_jieba)
             temp = 0
             for k in labels_list:
                 if not tags:
@@ -218,16 +177,7 @@ class CustomNerDataset(Dataset):
                         for i in range(start + 1, end):
                             labels_jieba[i] = 'I-' + k
                         labels_jieba[end] = 'E-' + k
-                # else:
-                #     if start == end:
-                #         labels_jieba[start - sum_dropped_len] = 'S-' + k
-                #     elif start + 1 == end:
-                #         labels_jieba[start - sum_dropped_len:end - sum_dropped_len + 1] = ['B-' + k, 'E-' + k]
-                #     else:
-                #         labels_jieba[start - sum_dropped_len] = 'B-' + k
-                #         for i in range(start + 1, end):
-                #             labels_jieba[i - sum_dropped_len] = 'I-' + k
-                #         labels_jieba[end - sum_dropped_len] = 'E-' + k
+                
             # print("labels_jieba:", labels_jieba)
             one_example_jieba.append(labels_jieba)
             one_example_jieba.append(tfidf_weight)
@@ -322,6 +272,7 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
         tfidf_weight_seged = []
         pos_weight_seged = []
         chars_seged_all = []
+
         # for i in range(len(chars)):
         #     print("tfidf_no:", chars[i])
         for i in range(len(chars)):
@@ -339,11 +290,13 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
                         chars_seged.append(chars[i][juhao_line_char[a]: juhao_line_char[a + 1] + 1])
                         tfidf_weight_seged.append(tfidf_weight[i][juhao_line_char[a]: juhao_line_char[a + 1] + 1])
                         pos_weight_seged.append(pos_weight[i][juhao_line_char[a]: juhao_line_char[a + 1] + 1])
+                        # seg_weight.append(chars[i][juhao_line_char[a]: juhao_line_char[a + 1] + 1])
                         # print("chars_seged_there:", chars_seged)
             elif len(juhao_line_char) == 1:
                 chars_seged.append(torch.tensor([juhao_index]))
                 tfidf_weight_seged.append(torch.tensor([juhao_index]))
                 pos_weight_seged.append(torch.tensor([juhao_index]))
+                # seg_weight.append(torch.tensor([juhao_index]))
 
         # 每一个line中的相邻两个句号的间隔距离
         chars_seged_input = []
@@ -407,22 +360,28 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
                                 tfidf_weight_seged.append(tfidf_weight_seged_long[b + 1])
                                 pos_weight_seged.append(pos_weight_seged_long[b + 1])
 
+        seg_weight_all = []
         for i in range(len(chars_seged)):
+            seg_weight = []
+            for j in range(len(chars_seged[i])):
+                seg_weight.append(i)
+            seg_weight_all.append(seg_weight)
             max_seq_lens.append(len(chars_seged[i]))
             tfidf_weight_seged[i] = torch.LongTensor(tfidf_weight_seged[i])
             pos_weight_seged[i] = torch.LongTensor(pos_weight_seged[i])
-        # print("tfidf_weight_seged_even:", len(tfidf_weight_seged))
+            seg_weight_all[i] = torch.LongTensor(seg_weight_all[i])
+        # print("tfidf_weight_seged_even:", len(pos_weight_seged))
         # print("tfidf_weight_seged_even:", len(chars_seged))
         chars_seged = pad_sequence(chars_seged, batch_first=True, padding_value=0)
         labels_seged = pad_sequence(labels_seged, batch_first=True, padding_value=0)
         tfidf_weight_seged = pad_sequence(tfidf_weight_seged, batch_first=True, padding_value=0)
         pos_weight_seged = pad_sequence(pos_weight_seged, batch_first=True, padding_value=0)
+        seg_weight_all = pad_sequence(seg_weight_all, batch_first=True, padding_value=0)
         # print("chars_seged_even:", chars_seged)
         # print("chars_seged_even:", labels_seged)
         # print("max_seq_lens:", max_seq_lens)
-        # print("tfidf_weight_seged:", tfidf_weight_seged)
         # print("chars_seged_even:", chars_seged.size())
-        # print("chars_seged_even:", labels_seged.size())
+        # print("chars_seged_even:", labels_seged.size())   , seg_weight_all
         return chars_seged, labels_seged, torch.LongTensor(max_seq_lens), tfidf_weight_seged, pos_weight_seged
 
 
