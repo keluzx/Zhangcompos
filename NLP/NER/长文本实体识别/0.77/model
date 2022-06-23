@@ -475,7 +475,7 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
         tfidf_weight = tfidf_weight.to(device_lstm_crf_attn_pos_only)
         pos_weight = pos_weight.to(device_lstm_crf_attn_pos_only)
         seg_weight = seg_weight.to(device_lstm_crf_attn_pos_only)
-        embedding = self.emb_long(tfidf_weight) + self.emb_long(pos_weight)
+        embedding = self.emb_long(tfidf_weight) + self.emb_long(pos_weight) + self.emb_long(seg_weight)
         embedding = self.norm(embedding)
         # print('here')   + self.emb_long(seg_weight) + self.emb_long(pos_weight)
         total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
@@ -495,6 +495,7 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
         # print('tfidf_weight:', tfidf_weight.size())
         tfidf_weight = tfidf_weight.unsqueeze(2).repeat(1, 1, 25)
         pos_weight = pos_weight.unsqueeze(2).repeat(1, 1, 25)
+        seg_weight = seg_weight.unsqueeze(2).repeat(1, 1, 25)
         input_tensor += tfidf_weight + pos_weight
 
         return input_tensor
@@ -630,9 +631,9 @@ class MultiHeadAttention(nn.Module):
     def __init__(self):
         super(MultiHeadAttention, self).__init__()
         self.d_model = 128
-        self.d_k = 25
-        self.d_v = 25
-        self.n_heads = 12
+        self.d_k = 64
+        self.d_v = 64
+        self.n_heads = 8
         self.W_Q = nn.Linear(self.d_model, self.d_k * self.n_heads)
         self.W_K = nn.Linear(self.d_model, self.d_k * self.n_heads)
         self.W_V = nn.Linear(self.d_model, self.d_v * self.n_heads)
