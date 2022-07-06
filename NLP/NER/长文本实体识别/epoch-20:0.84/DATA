@@ -135,7 +135,7 @@ class CustomNerDataset(Dataset):
                         pos_weight.append(-0.9)
                 else:
                     for i in word:
-                        pos_weight.append(0.3)
+                        pos_weight.append(0.1)
 
             for i in original_text:
                 word_jieba_demo.append(i)  # word_jieba - 词汇
@@ -159,6 +159,7 @@ class CustomNerDataset(Dataset):
             labels_jieba = ['O'] * len(chars)
             temp = 0
             for k in labels_list:
+                # print("k_index:", k)
                 if not tags:
                     if 'B-' + k not in self.label2id:
                         self.label2id['B-' + k] = len(self.label2id)
@@ -177,9 +178,22 @@ class CustomNerDataset(Dataset):
                         labels_jieba[start:end + 1] = ['B-' + k, 'E-' + k]
                     else:
                         labels_jieba[start] = 'B-' + k
-                        for i in range(start + 1, end):
+                        for i in range(start + 1, end - 1):
                             labels_jieba[i] = 'I-' + k
-                        labels_jieba[end] = 'E-' + k
+                            # print("labels_jieba:", labels_jieba)
+                        labels_jieba[end - 1] = 'E-' + k
+                # if start < len(labels_jieba) and end < len(labels_jieba) and k == '手术':
+                #     if start == end:
+                #         labels_jieba[start] = 'S-' + k
+                #         # labels_jieba.extend(labels_jieba_long[start])
+                #     elif start + 1 == end:
+                #         labels_jieba[start:end + 1] = ['B-' + k, 'E-' + k]
+                #     else:
+                #         labels_jieba[start] = 'B-' + k
+                #         for i in range(start + 1, end - 1):
+                #             labels_jieba[i] = 'I-' + k
+                #
+                #         labels_jieba[end - 1] = 'E-' + k
 
             # print("labels_jieba:", labels_jieba)
             one_example_jieba.append(labels_jieba)
@@ -229,8 +243,8 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
         #                                   vocab=self.train_data.char2id,
         #                                   tags=self.train_data.label2id)
 
-        self.train_size = int(len(self.train_data) * 0.9)
-        self.validate_size = int(len(self.train_data) * 0.1)
+        self.train_size = int(len(self.train_data) * 0.7)
+        self.validate_size = int(len(self.train_data) * 0.3)
         self.test_size = len(self.train_data) - self.validate_size - self.train_size
 
         self.train_dataset, self.validate_dataset, self.test_dataset = \
@@ -385,7 +399,8 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
         # print("max_seq_lens:", max_seq_lens)
         # print("chars_seged_even:", chars_seged.size())
         # print("chars_seged_even:", labels_seged.size())   , seg_weight_all
-        return chars_seged, labels_seged, torch.LongTensor(max_seq_lens), tfidf_weight_seged, pos_weight_seged, seg_weight_all
+        return chars_seged, labels_seged, torch.LongTensor(
+            max_seq_lens), tfidf_weight_seged, pos_weight_seged, seg_weight_all
 
 
 if __name__ == '__main__':
