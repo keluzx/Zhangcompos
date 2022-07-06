@@ -6,16 +6,16 @@ from torchcrf import CRF
 from transformers import RobertaModel, AutoModel, AlbertModel, BertModel
 # from ernie.modeling_ernie import ErnieModel, ErnieModelForSequenceClassification
 import torch.nn.functional as F
-
+# from keras_albert_model.albert import build_albert
+# from keras_albert_model.keras_albert_model.albert import load_brightmart_albert_zh_checkpoint
 # from pytorch_transformers import XLNetModel
 
 
-# device_lstm_crf_attn_pos_tfidf = torch.device("cuda:1")
-device_lstm_crf = torch.device("cuda:0")
+device_lstm_crf = torch.device("cuda:6")
 device_bert_crf = torch.device("cuda:2")
 device_bert_lstm_crf_attn_pos_only = torch.device("cuda:2")
 device_bert_lstm_crf = torch.device("cuda:2")
-device_lstm_crf_attn_pos_only = torch.device("cuda:0")
+device_lstm_crf_attn_pos_only = torch.device("cuda:1")
 device_lstm_crf_attn = torch.device("cuda:6")
 device_gru_crf_attn = torch.device("cuda:5")
 device_gru_crf_attn_pos = torch.device("cuda:7")
@@ -24,11 +24,11 @@ device_gru_crf_attn_pos = torch.device("cuda:7")
 class LstmCRFModel(nn.Module):
     def __init__(self, embedding_size=256, num_tags=25,
                  vocab_size=3675, hidden_size=128,
-                 batch_first=True, dropout=0.2):
+                 batch_first=True, dropout=0.1):
         super(LstmCRFModel, self).__init__()
         self.batch_first = batch_first
         self.embedding = nn.Embedding(vocab_size, embedding_size)
-
+        self.enc_self = MultiHeadAttention()
         self.lstm = nn.LSTM(embedding_size, hidden_size // 2,
                             num_layers=2, batch_first=True,
                             bidirectional=True, dropout=dropout)
@@ -55,7 +55,8 @@ class LstmCRFModel(nn.Module):
         # print("input_packed:", hidden[0].size())
         output_lstm, length = pad_packed_sequence(output_lstm, batch_first=self.batch_first,
                                                   total_length=total_length)
-
+        # print("input_packed:", hidden[0].size())
+        output_lstm, attn = self.enc_self(output_lstm, output_lstm, output_lstm)
         # attn_output = self.attention_net(output_lstm, hidden[0])
 
         output_fc = self.fc(output_lstm)
@@ -95,24 +96,28 @@ class LstmCRFModel(nn.Module):
         return predicted_index
 
 
-class BertCRFModel(nn.Module):
+class ALBERTCRF(nn.Module):
     def __init__(self, embedding_size=256, num_tags=25,
                  vocab_size=3675, hidden_size=128,
                  batch_first=True, dropout=0.1):
-        super(BertCRFModel, self).__init__()
+        super(ALBERTCRF, self).__init__()
         self.batch_first = batch_first
-        self.model = RobertaModel.from_pretrained("hfl/chinese-roberta-wwm-ext")
-        self.lstm = nn.LSTM(embedding_size, hidden_size // 2,
-                            num_layers=2, batch_first=True,
-                            bidirectional=True, dropout=dropout)
-        self.fc = nn.Linear(768, num_tags)
+        self.model = BertModel.from_pretrained('clue/albert_chinese_tiny')
+        self.enc_self = MultiHeadAttention()
+        # self.lstm = nn.LSTM(embedding_size, hidden_size // 2,
+        #                     num_layers=2, batch_first=True,
+        #                     bidirectional=True, dropout=dropout)
+        self.fc = nn.Linear(128, num_tags)
         self.crf = CRF(num_tags, batch_first=True)
 
     def forward(self, input_tensor):
         # print("input_tensor_before:", input_tensor.size())
         input_tensor = self.model(input_tensor)
         # print("input_tensor_after:", input_tensor.last_hidden_state.size())
-        input_tensor = self.fc(input_tensor.last_hidden_state)
+        input_tensor, attn = self.enc_self(input_tensor.last_hidden_state,
+                                           input_tensor.last_hidden_state, input_tensor.last_hidden_state)
+        # print("input_tensor_final:", input_tensor.size())
+        input_tensor = self.fc(input_tensor)
         # print("input_tensor_final:", input_tensor.size())
         return input_tensor
 
@@ -128,8 +133,6 @@ class BertCRFModel(nn.Module):
             mask = torch.greater(input_tensor, mask).type(torch.ByteTensor)
 
         output = self.forward(input_tensor)
-        # print('output_size:', output.size())
-        # print("tags:", tags)
         # output - bert的输出
         # tags - 每一个字符对应的BIESO标签
         # mask - 标记每一个位置上的字符是否为填补字符
@@ -462,20 +465,21 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
         self.emb_long = nn.Embedding(vocab_size, 312)
         self.emb_short = nn.Embedding(vocab_size, 25)
         self.model = AlbertModel.from_pretrained('clue/albert_chinese_tiny')
+        # self.model_albert = build_albert(token_num=30000, training=True)
         self.lstm = nn.LSTM(embedding_size, hidden_size // 2,
                             num_layers=2, batch_first=True,
                             bidirectional=True, dropout=dropout)
         self.enc_self_attn = MultiHeadAttention()
-        self.fc = nn.Linear(64, num_tags)
+        self.fc = nn.Linear(512, num_tags)
         self.norm = nn.LayerNorm(312)
         self.crf = CRF(num_tags, batch_first=True)
 
     def forward(self, input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight):
-        # print('here')
+        # print('input_tensor:', input_tensor)
         tfidf_weight = tfidf_weight.to(device_lstm_crf_attn_pos_only)
         pos_weight = pos_weight.to(device_lstm_crf_attn_pos_only)
         seg_weight = seg_weight.to(device_lstm_crf_attn_pos_only)
-        embedding = self.emb_long(tfidf_weight) + self.emb_long(pos_weight)
+        embedding = self.emb_long(pos_weight)
         embedding = self.norm(embedding)
         # print('here')   + self.emb_long(seg_weight)
         total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
@@ -630,7 +634,7 @@ class RobertLstmCRFAttnPosOnlyModel(nn.Module):
 class MultiHeadAttention(nn.Module):
     def __init__(self):
         super(MultiHeadAttention, self).__init__()
-        self.d_model = 64
+        self.d_model = 128
         self.d_k = 25
         self.d_v = 25
         self.n_heads = 12
