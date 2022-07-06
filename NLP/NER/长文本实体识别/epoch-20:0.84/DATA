@@ -129,13 +129,13 @@ class CustomNerDataset(Dataset):
             for index, (word, word_pos) in enumerate(original_text_pos):
                 if 'n' in word_pos:  # 名词放入word_jieba中
                     for i in word:
-                        pos_weight.append(0.99)
+                        pos_weight.append(0.9)
                 elif 'x' or 'd' in word:
                     for i in word:
-                        pos_weight.append(-0.99)
+                        pos_weight.append(-0.9)
                 else:
                     for i in word:
-                        pos_weight.append(0.1)
+                        pos_weight.append(0.3)
 
             for i in original_text:
                 word_jieba_demo.append(i)  # word_jieba - 词汇
