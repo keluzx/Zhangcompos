@@ -23,7 +23,7 @@ vocab_size = train_dev_data.vocab_size
 num_tags = train_dev_data.num_tags
 lr = 2e-4
 embedding_size = 312
-hidden_size = 512
+hidden_size = 768
 
 model = LstmCRFAttnPosOnlyModel(embedding_size=embedding_size, hidden_size=hidden_size,
                                 vocab_size=vocab_size, num_tags=num_tags)
@@ -46,9 +46,9 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=8, gamma=0.9)
 def eval(model=model, eval_dataloader=eval_dataloader):
     model.eval()
     result = {}
-    for index, (input_tensor, true_tags, seq_lens, tfidf_weight, pos_weight, seg_weight) in enumerate(eval_dataloader):
+    for index, (input_tensor, true_tags, seq_lens, tfidf_weight, pos_weight, seg_weight, pos_input) in enumerate(eval_dataloader):
         input_tensor = input_tensor.to(device_lstm_crf_attn_pos_only)
-        predict_tags = model.decode(input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight)
+        predict_tags = model.decode(input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight, pos_input)
         true_tags = list(true_tags.numpy())
         input_tensor = list(input_tensor.cpu().numpy())
         for pre, true, input in zip(predict_tags, true_tags, input_tensor):
@@ -61,13 +61,13 @@ def eval(model=model, eval_dataloader=eval_dataloader):
             for type, cnt in pre_result.items():
                 if type not in result:
                     result[type] = [0, 0, 0]
-                result[type][1] = 1 + len(cnt) + result[type][1]
+                result[type][1] = len(cnt) + result[type][1]
                 if type in true_result:
-                    result[type][0] = 1 + len(pre_result[type] & true_result[type]) + result[type][0]
+                    result[type][0] = len(pre_result[type] & true_result[type]) + result[type][0]
             for type, cnt in true_result.items():
                 if type not in result:
                     result[type] = [0, 0, 0]
-                result[type][2] = 1 + len(cnt) + result[type][2]
+                result[type][2] = len(cnt) + result[type][2]
 
     for type, (x, y, z) in result.items():
         X, Y, Z = 1e-10, 1e-10, 1e-10
@@ -97,10 +97,11 @@ def train(model=model, train_loader=train_dataloader, optimizer=optimizer, sched
         epoch_loss = 0
         epoch_count = 0
         before = -1
-        for index, (input_tensor, tags, seq_lens, tfidf_weight, pos_weight, seg_weight) in enumerate(train_loader):
+        for index, (input_tensor, tags, seq_lens, tfidf_weight, pos_weight, seg_weight, pos_input) in enumerate(train_loader):
+            # print("pos_input:", pos_input)
             input_tensor = input_tensor.to(device_lstm_crf_attn_pos_only)
             tags = tags.cuda()
-            loss = model.compute_loss(input_tensor, tags, seq_lens, tfidf_weight, pos_weight, seg_weight)
+            loss = model.compute_loss(input_tensor, tags, seq_lens, tfidf_weight, pos_weight, seg_weight, pos_input)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
