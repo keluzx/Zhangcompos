@@ -12,7 +12,7 @@ from sklearn.feature_extraction.text import TfidfTransformer
 
 class CustomNerDataset(Dataset):
     # 首先构造训练集的字典与标签  subtask1_training_part1.txt
-    def __init__(self, file_path='data/subtask1_train/subtask1_training_part1.txt', vocab=None, tags=None):
+    def __init__(self, file_path='data/subtask1_train/subtask1_training_part2.txt', vocab=None, tags=None):
         self.data = []
         self.PAD = "[PAD]"
         self.UNK = "[UNK]"
@@ -81,10 +81,10 @@ class CustomNerDataset(Dataset):
             tfidf_weight = []
             for i in range(len(char_dict.keys())):
                 if i in temp:
-                    tfidf_weight.append(0.9)
+                    tfidf_weight.append(1)
                 else:
-                    tfidf_weight.append(-0.9)
-
+                    tfidf_weight.append(0)
+            # print("tfidf_weight:", tfidf_weight)
             chars = []
             for c in line['originalText']:
                 chars.append(c)
@@ -236,7 +236,7 @@ class CustomNerDataset(Dataset):
 
 
 class TrainDevData:  # subtask1_test_set_with_answer.json
-    def __init__(self, train_path="data/subtask1_train/subtask1_training_part1.txt",
+    def __init__(self, train_path="data/subtask1_train/subtask1_training_part2.txt",
                  dev_path="data/subtask1_train/subtask1_training_part1.txt", vocab=None):
         self.train_data = CustomNerDataset(train_path, vocab=vocab)
         # self.eval_data = CustomNerDataset(dev_path,
@@ -253,7 +253,7 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
 
         self.id2char = {v: k for k, v in self.train_data.char2id.items()}
         self.id2tag = {v: k for k, v in self.train_data.label2id.items()}
-        print("id2tag:", self.id2tag)
+        # print("id2tag:", self.id2tag)
         self.vocab_size = len(self.train_data.char2id)
         self.num_tags = len(self.train_data.label2id)
 
