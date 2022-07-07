@@ -456,11 +456,11 @@ class LstmCRFAttnPosAllModel(nn.Module):
         return predicted_index
 
 
-class LstmCRFAttnPosOnlyModel(nn.Module):
+class AlbertBiLSTMAttnCRF(nn.Module):
     def __init__(self, embedding_size=256, num_tags=25,
                  vocab_size=35000, hidden_size=256,
                  batch_first=True, dropout=0.1):
-        super(LstmCRFAttnPosOnlyModel, self).__init__()
+        super(AlbertBiLSTMAttnCRF, self).__init__()
         self.batch_first = batch_first
         self.emb_long = nn.Embedding(vocab_size, 312)
         self.emb_short = nn.Embedding(vocab_size, 25)
