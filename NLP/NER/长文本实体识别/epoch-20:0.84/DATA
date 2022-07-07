@@ -358,16 +358,16 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
                     chars_seged_all.append(douhao_line_char)
                     if len(douhao_line_char) > 1:
                         for a in range(len(douhao_line_char)):
-                            if a < len(douhao_line_char) - 5:
-                                chars_long.append(chars_seged[i][douhao_line_char[a]: douhao_line_char[a + 5] + 1])
+                            if a < len(douhao_line_char) - 6:
+                                chars_long.append(chars_seged[i][douhao_line_char[a]: douhao_line_char[a + 6] + 1])
                                 tfidf_weight_seged_long.append(
-                                    tfidf_weight_seged[i][douhao_line_char[a]: douhao_line_char[a + 5] + 1])
+                                    tfidf_weight_seged[i][douhao_line_char[a]: douhao_line_char[a + 6] + 1])
                                 pos_weight_seged_long.append(
-                                    pos_weight_seged[i][douhao_line_char[a]: douhao_line_char[a + 5] + 1])
+                                    pos_weight_seged[i][douhao_line_char[a]: douhao_line_char[a + 6] + 1])
                                 pos_input_seged_long.append(
-                                    pos_input_seged[i][douhao_line_char[a]: douhao_line_char[a + 5] + 1])
+                                    pos_input_seged[i][douhao_line_char[a]: douhao_line_char[a + 6] + 1])
                                 labels_long.append(
-                                    labels_seged[i][douhao_line_char[a]: douhao_line_char[a + 5] + 1])  # 6
+                                    labels_seged[i][douhao_line_char[a]: douhao_line_char[a + 6] + 1])  # 6
                         for b in range(len(chars_long)):
                             if b < len(chars_long) - 1:
                                 chars_seged[i] = chars_long[b]
