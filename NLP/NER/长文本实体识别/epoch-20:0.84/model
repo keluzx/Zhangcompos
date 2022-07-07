@@ -480,7 +480,7 @@ class AlbertBiLSTMAttnCRF(nn.Module):
         pos_weight = pos_weight.to(device_lstm_crf_attn_pos_only)
         seg_weight = seg_weight.to(device_lstm_crf_attn_pos_only)
         pos_input = pos_input.to(device_lstm_crf_attn_pos_only)
-        embedding = self.emb_long(pos_weight) + self.emb_long(pos_input)
+        embedding = self.emb_long(pos_weight) + self.emb_long(pos_input) + self.emb_long(tfidf_weight)
         embedding = self.norm(embedding)
         # print('here')   + self.emb_long(seg_weight)
         total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
