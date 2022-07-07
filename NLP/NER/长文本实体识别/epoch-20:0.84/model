@@ -474,13 +474,12 @@ class AlbertBiLSTMAttnCRF(nn.Module):
         self.norm = nn.LayerNorm(312)
         self.crf = CRF(num_tags, batch_first=True)
 
-    def forward(self, input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight, pos_input):
-        # print('input_tensor:', input_tensor)
-        tfidf_weight = tfidf_weight.to(device_lstm_crf_attn_pos_only)
+    def forward(self, input_tensor, seq_lens, pst_weight, pos_weight, seg_weight, pos_input):
+        pst_weight = pst_weight.to(device_lstm_crf_attn_pos_only)
         pos_weight = pos_weight.to(device_lstm_crf_attn_pos_only)
         seg_weight = seg_weight.to(device_lstm_crf_attn_pos_only)
         pos_input = pos_input.to(device_lstm_crf_attn_pos_only)
-        embedding = self.emb_long(pos_weight) + self.emb_long(pos_input) + self.emb_long(tfidf_weight)
+        embedding = self.emb_long(pos_weight) + self.emb_long(pos_input) + self.emb_long(pst_weight)
         embedding = self.norm(embedding)
         # print('here')   + self.emb_long(seg_weight)
         total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
@@ -492,16 +491,8 @@ class AlbertBiLSTMAttnCRF(nn.Module):
                                                   total_length=total_length)
         # print('here')
         enc_outputs, attn = self.enc_self_attn(output_lstm, output_lstm, output_lstm)
-        # attn_output = self.attention_net(enc_outputs, hidden[1], hidden[0])
+
         input_tensor = self.fc(enc_outputs)
-        # tfidf_weight = self.emb_short(tfidf_weight)
-        # pos_weight = self.emb_short(pos_weight)a
-        # seg_weight = self.emb_short(seg_weight)
-        # print('tfidf_weight:', tfidf_weight.size())
-        tfidf_weight = tfidf_weight.unsqueeze(2).repeat(1, 1, 25)
-        pos_weight = pos_weight.unsqueeze(2).repeat(1, 1, 25)
-        seg_weight = seg_weight.unsqueeze(2).repeat(1, 1, 25)
-        # input_tensor += tfidf_weight + pos_weight
 
         return input_tensor
 
