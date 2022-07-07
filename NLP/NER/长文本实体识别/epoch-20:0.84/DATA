@@ -28,6 +28,7 @@ class CustomNerDataset(Dataset):
         else:
             self.label2id = {'O': 0}
             # self.label2id_new = {'O': 0}
+        self.pos2id = {}
 
         word_labels = {}
         all_start_end_labels = []
@@ -121,6 +122,17 @@ class CustomNerDataset(Dataset):
                         if char_dict_another[i] == j:
                             word_labels[word_pos] += 1
 
+            # print("original_text_pos:", original_text_pos)
+            for i, j in original_text_pos:
+                if j not in self.pos2id:
+                    self.pos2id[j] = len(self.pos2id)
+
+            # print("original_text_pos:", self.pos2id)
+            pos_input = []
+            for i, j in original_text_pos:
+                for a in i:
+                    pos_input.append(self.pos2id[j])
+
             word_jieba = []
             word_jieba_demo = []
 
@@ -130,12 +142,12 @@ class CustomNerDataset(Dataset):
                 if 'n' in word_pos:  # 名词放入word_jieba中
                     for i in word:
                         pos_weight.append(0.9)
-                elif 'x' or 'd' in word:
+                elif 'x' or 'd' or 'eng' in word:  # + one_example_jieba.append(pos_input)
                     for i in word:
                         pos_weight.append(-0.9)
                 else:
                     for i in word:
-                        pos_weight.append(0.1)
+                        pos_weight.append(0.4)
 
             for i in original_text:
                 word_jieba_demo.append(i)  # word_jieba - 词汇
@@ -180,25 +192,12 @@ class CustomNerDataset(Dataset):
                         labels_jieba[start] = 'B-' + k
                         for i in range(start + 1, end - 1):
                             labels_jieba[i] = 'I-' + k
-                            # print("labels_jieba:", labels_jieba)
                         labels_jieba[end - 1] = 'E-' + k
-                # if start < len(labels_jieba) and end < len(labels_jieba) and k == '手术':
-                #     if start == end:
-                #         labels_jieba[start] = 'S-' + k
-                #         # labels_jieba.extend(labels_jieba_long[start])
-                #     elif start + 1 == end:
-                #         labels_jieba[start:end + 1] = ['B-' + k, 'E-' + k]
-                #     else:
-                #         labels_jieba[start] = 'B-' + k
-                #         for i in range(start + 1, end - 1):
-                #             labels_jieba[i] = 'I-' + k
-                #
-                #         labels_jieba[end - 1] = 'E-' + k
 
-            # print("labels_jieba:", labels_jieba)
             one_example_jieba.append(labels_jieba)
             one_example_jieba.append(tfidf_weight)
             one_example_jieba.append(pos_weight)
+            one_example_jieba.append(pos_input)
             # print("one_example_jieba:", one_example_jieba)
             self.data.append(one_example_jieba)
         # print("word_labels:", self.data)
@@ -210,7 +209,7 @@ class CustomNerDataset(Dataset):
 
     def __getitem__(self, idx):
         global juhao_index, douhao_index
-        chars, labels, tfidf_weight, pos_weight = self.data[idx]
+        chars, labels, tfidf_weight, pos_weight, pos_input = self.data[idx]
         # print("start_end_labels:", tfidf_weight)
         # print("chars:", chars)
         for i, j in self.char2id.items():
@@ -231,7 +230,8 @@ class CustomNerDataset(Dataset):
             'juhao_index': juhao_index,
             'douhao_index': douhao_index,
             'tfidf_weight': tfidf_weight,
-            'pos_weight': pos_weight
+            'pos_weight': pos_weight,
+            'pos_input': pos_input
         }
 
 
@@ -269,7 +269,7 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
 
     def len_collate_fn(self, batch_data):
         global chars_seged, labels_seged
-        chars, labels, seq_lens, max_seq_lens, douhao_index, tfidf_weight, pos_weight = [], [], [], [], [], [], []
+        chars, labels, seq_lens, max_seq_lens, douhao_index, tfidf_weight, pos_weight, pos_input = [], [], [], [], [], [], [], []
         # print("batch_data:", batch_data)
         juhao_index = None
         for d in batch_data:
@@ -280,18 +280,15 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
             douhao_index = d['douhao_index']
             tfidf_weight.append(d['tfidf_weight'])
             pos_weight.append(d['pos_weight'])
-        # print("juhao_index:", juhao_index)
-        # print("chars:", chars)
-        # print("tfidf_weight:", tfidf_weight)
+            pos_input.append(d['pos_input'])
 
         # 以句号切分line
         chars_seged = []
         tfidf_weight_seged = []
         pos_weight_seged = []
+        pos_input_seged = []
         chars_seged_all = []
 
-        # for i in range(len(chars)):
-        #     print("tfidf_no:", chars[i])
         for i in range(len(chars)):
             juhao_line_char = [0]
             for index, value in enumerate(chars[i]):
@@ -307,12 +304,14 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
                         chars_seged.append(chars[i][juhao_line_char[a]: juhao_line_char[a + 1] + 1])
                         tfidf_weight_seged.append(tfidf_weight[i][juhao_line_char[a]: juhao_line_char[a + 1] + 1])
                         pos_weight_seged.append(pos_weight[i][juhao_line_char[a]: juhao_line_char[a + 1] + 1])
+                        pos_input_seged.append(pos_input[i][juhao_line_char[a]: juhao_line_char[a + 1] + 1])
                         # seg_weight.append(chars[i][juhao_line_char[a]: juhao_line_char[a + 1] + 1])
                         # print("chars_seged_there:", chars_seged)
             elif len(juhao_line_char) == 1:
                 chars_seged.append(torch.tensor([juhao_index]))
                 tfidf_weight_seged.append(torch.tensor([juhao_index]))
                 pos_weight_seged.append(torch.tensor([juhao_index]))
+                pos_input_seged.append(torch.tensor([juhao_index]))
                 # seg_weight.append(torch.tensor([juhao_index]))
 
         # 每一个line中的相邻两个句号的间隔距离
@@ -346,6 +345,7 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
             chars_long = []
             labels_long = []
             pos_weight_seged_long = []
+            pos_input_seged_long = []
             tfidf_weight_seged_long = []
             for i in range(len(chars_seged)):
                 if len(chars_seged[i]) > 512:
@@ -358,24 +358,29 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
                     chars_seged_all.append(douhao_line_char)
                     if len(douhao_line_char) > 1:
                         for a in range(len(douhao_line_char)):
-                            if a < len(douhao_line_char) - 6:
-                                chars_long.append(chars_seged[i][douhao_line_char[a]: douhao_line_char[a + 6] + 1])
+                            if a < len(douhao_line_char) - 5:
+                                chars_long.append(chars_seged[i][douhao_line_char[a]: douhao_line_char[a + 5] + 1])
                                 tfidf_weight_seged_long.append(
-                                    tfidf_weight_seged[i][douhao_line_char[a]: douhao_line_char[a + 6] + 1])
+                                    tfidf_weight_seged[i][douhao_line_char[a]: douhao_line_char[a + 5] + 1])
                                 pos_weight_seged_long.append(
-                                    pos_weight_seged[i][douhao_line_char[a]: douhao_line_char[a + 6] + 1])
-                                labels_long.append(labels_seged[i][douhao_line_char[a]: douhao_line_char[a + 6] + 1])
+                                    pos_weight_seged[i][douhao_line_char[a]: douhao_line_char[a + 5] + 1])
+                                pos_input_seged_long.append(
+                                    pos_input_seged[i][douhao_line_char[a]: douhao_line_char[a + 5] + 1])
+                                labels_long.append(
+                                    labels_seged[i][douhao_line_char[a]: douhao_line_char[a + 5] + 1])  # 6
                         for b in range(len(chars_long)):
                             if b < len(chars_long) - 1:
                                 chars_seged[i] = chars_long[b]
                                 labels_seged[i] = labels_long[b]
                                 tfidf_weight_seged[i] = tfidf_weight_seged_long[b]
                                 pos_weight_seged[i] = pos_weight_seged_long[b]
+                                pos_input_seged[i] = pos_input_seged_long[b]
 
                                 chars_seged.append(chars_long[b + 1])
                                 labels_seged.append(labels_long[b + 1])
                                 tfidf_weight_seged.append(tfidf_weight_seged_long[b + 1])
                                 pos_weight_seged.append(pos_weight_seged_long[b + 1])
+                                pos_input_seged.append(pos_input_seged_long[b + 1])
 
         seg_weight_all = []
         for i in range(len(chars_seged)):
@@ -388,19 +393,22 @@ class TrainDevData:  # subtask1_test_set_with_answer.json
             tfidf_weight_seged[i] = torch.LongTensor(tfidf_weight_seged[i])
             pos_weight_seged[i] = torch.LongTensor(pos_weight_seged[i])
             seg_weight_all[i] = torch.LongTensor(seg_weight_all[i])
+            pos_input_seged[i] = torch.LongTensor(pos_input_seged[i])
 
         chars_seged = pad_sequence(chars_seged, batch_first=True, padding_value=0)
         labels_seged = pad_sequence(labels_seged, batch_first=True, padding_value=0)
         tfidf_weight_seged = pad_sequence(tfidf_weight_seged, batch_first=True, padding_value=0)
         pos_weight_seged = pad_sequence(pos_weight_seged, batch_first=True, padding_value=0)
         seg_weight_all = pad_sequence(seg_weight_all, batch_first=True, padding_value=0)
+        pos_input_seged = pad_sequence(pos_input_seged, batch_first=True, padding_value=0)
+
         # print("chars_seged_even:", chars_seged)
         # print("chars_seged_even:", labels_seged)
         # print("max_seq_lens:", max_seq_lens)
         # print("chars_seged_even:", chars_seged.size())
         # print("chars_seged_even:", labels_seged.size())   , seg_weight_all
         return chars_seged, labels_seged, torch.LongTensor(
-            max_seq_lens), tfidf_weight_seged, pos_weight_seged, seg_weight_all
+            max_seq_lens), tfidf_weight_seged, pos_weight_seged, seg_weight_all, pos_input_seged
 
 
 if __name__ == '__main__':
