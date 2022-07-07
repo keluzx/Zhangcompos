@@ -1,5 +1,5 @@
 from DATA_LSTM_POS_only import *
-from model import LstmCRFAttnPosOnlyModel
+from model import AlbertBiLSTMAttnCRF
 import collections
 from transformers import AutoTokenizer, BertTokenizer
 from lstm_crf import decode_prediction
@@ -25,7 +25,7 @@ lr = 2e-4
 embedding_size = 312
 hidden_size = 768
 
-model = LstmCRFAttnPosOnlyModel(embedding_size=embedding_size, hidden_size=hidden_size,
+model = AlbertBiLSTMAttnCRF(embedding_size=embedding_size, hidden_size=hidden_size,
                                 vocab_size=vocab_size, num_tags=num_tags)
 # model = DataParallel(net, device_ids=gpus, output_device=gpus[0])
 model.to(device_lstm_crf_attn_pos_only)
