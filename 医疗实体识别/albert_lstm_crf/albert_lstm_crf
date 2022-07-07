@@ -1,4 +1,4 @@
-from DATA_LSTM_POS_only import *
+from data_load import *
 from model import AlbertBiLSTMAttnCRF
 import collections
 from transformers import AutoTokenizer, BertTokenizer
