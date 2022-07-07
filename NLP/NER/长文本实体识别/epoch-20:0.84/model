@@ -24,7 +24,7 @@ device_gru_crf_attn_pos = torch.device("cuda:7")
 class LstmCRFModel(nn.Module):
     def __init__(self, embedding_size=256, num_tags=25,
                  vocab_size=3675, hidden_size=128,
-                 batch_first=True, dropout=0.1):
+                 batch_first=True, dropout=0.2):
         super(LstmCRFModel, self).__init__()
         self.batch_first = batch_first
         self.embedding = nn.Embedding(vocab_size, embedding_size)
@@ -38,7 +38,7 @@ class LstmCRFModel(nn.Module):
             else:
                 nn.init.zeros_(param)
 
-        self.fc = nn.Linear(128, num_tags)
+        self.fc = nn.Linear(256, num_tags)
         self.crf = CRF(num_tags, batch_first=True)
 
     def forward(self, input_tensor, seq_lens):
@@ -107,7 +107,7 @@ class ALBERTCRF(nn.Module):
         # self.lstm = nn.LSTM(embedding_size, hidden_size // 2,
         #                     num_layers=2, batch_first=True,
         #                     bidirectional=True, dropout=dropout)
-        self.fc = nn.Linear(128, num_tags)
+        self.fc = nn.Linear(312, num_tags)
         self.crf = CRF(num_tags, batch_first=True)
 
     def forward(self, input_tensor):
@@ -470,16 +470,17 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
                             num_layers=2, batch_first=True,
                             bidirectional=True, dropout=dropout)
         self.enc_self_attn = MultiHeadAttention()
-        self.fc = nn.Linear(512, num_tags)
+        self.fc = nn.Linear(768, num_tags)
         self.norm = nn.LayerNorm(312)
         self.crf = CRF(num_tags, batch_first=True)
 
-    def forward(self, input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight):
+    def forward(self, input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight, pos_input):
         # print('input_tensor:', input_tensor)
         tfidf_weight = tfidf_weight.to(device_lstm_crf_attn_pos_only)
         pos_weight = pos_weight.to(device_lstm_crf_attn_pos_only)
         seg_weight = seg_weight.to(device_lstm_crf_attn_pos_only)
-        embedding = self.emb_long(pos_weight)
+        pos_input = pos_input.to(device_lstm_crf_attn_pos_only)
+        embedding = self.emb_long(pos_weight) + self.emb_long(pos_input)
         embedding = self.norm(embedding)
         # print('here')   + self.emb_long(seg_weight)
         total_length = input_tensor.size(1) if self.batch_first else input_tensor.size(0)
@@ -500,7 +501,7 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
         tfidf_weight = tfidf_weight.unsqueeze(2).repeat(1, 1, 25)
         pos_weight = pos_weight.unsqueeze(2).repeat(1, 1, 25)
         seg_weight = seg_weight.unsqueeze(2).repeat(1, 1, 25)
-        input_tensor += tfidf_weight + pos_weight
+        # input_tensor += tfidf_weight + pos_weight
 
         return input_tensor
 
@@ -524,18 +525,18 @@ class LstmCRFAttnPosOnlyModel(nn.Module):
         # print('here')
         return context
 
-    def compute_loss(self, input_tensor, tags, seq_lens, tfidf_weight, pos_weight, seg_weight):
+    def compute_loss(self, input_tensor, tags, seq_lens, tfidf_weight, pos_weight, seg_weight, pos_input):
         mask = torch.zeros(input_tensor.shape[:2])
         mask = mask.to(device_lstm_crf_attn_pos_only)
         mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
-        output_fc = self.forward(input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight)
+        output_fc = self.forward(input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight, pos_input)
         loss = -self.crf(output_fc, tags, mask, reduction='mean')
 
         return loss
 
-    def decode(self, input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight):
+    def decode(self, input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight, pos_input):
         # print('true_decode__')
-        out = self.forward(input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight)
+        out = self.forward(input_tensor, seq_lens, tfidf_weight, pos_weight, seg_weight, pos_input)
         mask = torch.zeros(input_tensor.shape[:2])
         mask = mask.to(device_lstm_crf_attn_pos_only)
         mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
@@ -634,7 +635,7 @@ class RobertLstmCRFAttnPosOnlyModel(nn.Module):
 class MultiHeadAttention(nn.Module):
     def __init__(self):
         super(MultiHeadAttention, self).__init__()
-        self.d_model = 128
+        self.d_model = 768
         self.d_k = 25
         self.d_v = 25
         self.n_heads = 12
