@@ -509,7 +509,10 @@ class AlbertBiLSTMAttnCRF(nn.Module):
         return context
 
     def compute_loss(self, input_tensor, tags, seq_lens, pst_weight, pos_input):
+        # print("tags:", tags)
+
         mask = torch.zeros(input_tensor.shape[:2])
+        # print("mask:", mask)
         mask = mask.to(device_lstm_crf_attn_pos_only)
         mask = torch.greater(input_tensor, mask).type(torch.cuda.ByteTensor)
         output_fc = self.forward(input_tensor, seq_lens, pst_weight, pos_input)
