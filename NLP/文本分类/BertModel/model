@@ -15,33 +15,79 @@ class BertClassifier(nn.Module):
     def __init__(self, bert_config, num_labels):
         super().__init__()
         # 定义BERT模型
+        self.emb = nn.Embedding(100000, bert_config.hidden_size)
         self.bert = BertModel(config=bert_config)
         # 定义分类器
         self.classifier = nn.Linear(bert_config.hidden_size, num_labels)
 
-    def forward(self, input_ids, attention_mask, token_type_ids):
+    def forward(self, input_ids, attention_mask, token_type_ids, input_pos):
         # BERT的输出
+        # bert_output[0] - [batch, seq_len, hidden_size]
+        # print('here')
+        input_pos = self.emb(input_pos)
+        print("input_pos:", input_pos.size())
         bert_output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
         # 取[CLS]位置的pooled output
+        # print("bert_output:", bert_output[0].size())
         pooled = bert_output[1]
+        print("pooled:", pooled.size())
+
         # 分类
         logits = self.classifier(pooled)
+        print("logits:", logits.size())
         # 返回softmax后结果
         return torch.softmax(logits, dim=1)
 
 
+'''
+使用TF-IDF获得关键词
+加入关键词位置信息
+'''
+
+
 # Bert+BiLSTM，用法与BertClassifier一样，可直接在train里面调用
 class BertLstmClassifier(nn.Module):
-    def __init__(self, bert_config):
+    def __init__(self, bert_config, num_labels):
         super().__init__()
         self.bert = BertModel(config=bert_config)
+        self.emb = nn.Embedding(100000, bert_config.hidden_size * 2)
         self.lstm = nn.LSTM(input_size=bert_config.hidden_size, hidden_size=bert_config.hidden_size, num_layers=2,
                             batch_first=True, bidirectional=True)
-        self.classifier = nn.Linear(bert_config.hidden_size * 2, bert_config.num_labels)  # 双向LSTM 需要乘以2
+        # print('self:', num_labels)
+        self.classifier = nn.Linear(bert_config.hidden_size * 2, num_labels)  # 双向LSTM 需要乘以2
         self.softmax = nn.Softmax(dim=1)
 
-    def forward(self, input_ids, attention_mask, token_type_ids):
-        output, pooled = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+    def forward(self, input_ids, attention_mask, token_type_ids, input_pos):
+        output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+
+        input_pos = self.emb(input_pos)
+
+        out, _ = self.lstm(output[0])  # out-[4, 512, 1536]
+
+        out = out + input_pos
+
+        logits = self.classifier(out[:, -1, :])  # 取最后时刻的输出
+        # print("logits:", logits)
+        return self.softmax(logits)
+
+
+# LSTM
+class LstmClassifier(nn.Module):
+    def __init__(self, num_labels):
+        super().__init__()
+        self.hidden_size = 128
+        # self.model = BertModel.from_pretrained('clue/albert_chinese_tiny')
+        # self.bert = BertModel(config=bert_config, num_labels)
+        self.emb = nn.Embedding(50000, self.hidden_size)
+        self.lstm = nn.LSTM(input_size=self.hidden_size, hidden_size=self.hidden_size, num_layers=2,
+                            batch_first=True, bidirectional=True)
+        self.classifier = nn.Linear(self.hidden_size * 2, num_labels)  # 双向LSTM 需要乘以2
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, input_ids):
+        # output, pooled = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        output = self.emb(input_ids)
+        # output = self.model(input_ids)
         out, _ = self.lstm(output)
         logits = self.classifier(out[:, -1, :])  # 取最后时刻的输出
         return self.softmax(logits)
