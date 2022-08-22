@@ -7,7 +7,7 @@
 
 import torch
 import torch.nn as nn
-from transformers import BertModel
+from transformers import BertModel, AlbertModel
 
 
 # Bert
@@ -45,13 +45,47 @@ class BertClassifier(nn.Module):
 '''
 
 
-# Bert+BiLSTM，用法与BertClassifier一样，可直接在train里面调用
+# Bert+BiLSTM+POS，用法与BertClassifier一样，可直接在train里面调用
 class BertLstmClassifier(nn.Module):
+    def __init__(self, bert_config, num_labels):
+        super().__init__()
+        self.model = AlbertModel.from_pretrained('clue/albert_chinese_tiny')
+        # self.bert = BertModel(config=bert_config)
+        self.emb = nn.Embedding(100000, bert_config.hidden_size * 2)
+        self.lstm = nn.LSTM(input_size=bert_config.hidden_size, hidden_size=bert_config.hidden_size, num_layers=1,
+                            batch_first=True, bidirectional=True)
+        # self.gru = nn.GRU(input_size=bert_config.hidden_size, hidden_size=bert_config.hidden_size, num_layers=1,
+        #                     batch_first=True, bidirectional=True)
+        # print('self:', num_labels)
+        self.classifier = nn.Linear(bert_config.hidden_size * 2, num_labels)  # 双向LSTM 需要乘以2
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, input_ids, input_pos, input_vocabulary):  # , attention_mask, token_type_ids,
+        # output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        # print("here:")
+        output = self.model(input_ids)
+        input_pos = self.emb(input_pos)
+        input_vocabulary = self.emb(input_vocabulary)
+
+        # out, _ = self.lstm(output[0])  #
+        out, _ = self.lstm(output[0])
+        # print("output:", output.last_hidden_state.size())
+        # print("input_vocabulary:", input_vocabulary.size())
+        # print("input_vocabulary:", out.size())
+        # print("_:", _[0].size())
+        out = out + input_pos + input_vocabulary
+
+        logits = self.classifier(out[:, -1, :])  # 取最后时刻的输出
+        # print("logits:", logits)
+        return self.softmax(logits)
+
+
+class BertGRUClassifier(nn.Module):
     def __init__(self, bert_config, num_labels):
         super().__init__()
         self.bert = BertModel(config=bert_config)
         self.emb = nn.Embedding(100000, bert_config.hidden_size * 2)
-        self.lstm = nn.LSTM(input_size=bert_config.hidden_size, hidden_size=bert_config.hidden_size, num_layers=2,
+        self.gru = nn.GRU(input_size=bert_config.hidden_size, hidden_size=bert_config.hidden_size, num_layers=2,
                             batch_first=True, bidirectional=True)
         # print('self:', num_labels)
         self.classifier = nn.Linear(bert_config.hidden_size * 2, num_labels)  # 双向LSTM 需要乘以2
@@ -62,7 +96,7 @@ class BertLstmClassifier(nn.Module):
 
         input_pos = self.emb(input_pos)
 
-        out, _ = self.lstm(output[0])  # out-[4, 512, 1536]
+        out, _ = self.gru(output[0])  # out-[4, 512, 1536]
 
         out = out + input_pos
 
