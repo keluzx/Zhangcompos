@@ -1,0 +1,111 @@
+import torch
+import jieba
+import numpy as np
+import jieba.posseg as psg
+from torch.utils.data import DataLoader
+from dataset import CNewsDataset
+from model import BertClassifier, BertLstmClassifier
+from transformers import BertTokenizer, BertConfig, AlbertModel, AlbertConfig
+
+labels = ['体育', '娱乐', '家居', '房产', '教育', '时尚', '时政', '游戏', '科技', '财经']
+bert_config = AlbertConfig.from_pretrained('clue/albert_chinese_tiny')
+# train_dataset = CNewsDataset('data/demo.txt')
+# emb_size = len(train_dataset.vocab_dict)
+emb_size = 359265
+print('emb_size:', emb_size)
+# 定义模型
+model = BertLstmClassifier(bert_config, len(labels), emb_size)
+# print('here:', model)
+# 加载训练好的模型
+model.load_state_dict(torch.load('models/lstm/best_model.pkl'))
+model.eval()
+print('here:', model)
+tokenizer = BertTokenizer.from_pretrained('clue/albert_chinese_tiny')
+
+
+pos2id = {}
+vocab2id = {}
+input_vocabulary = []
+input_poses = []
+
+print('新闻类别分类')
+while True:
+    text = input('Input: ')
+    # 原始文本序列化、文本标签序列化
+    pos_dict = {}
+    vocab_dict = {}
+
+    # 词性特征
+    text_pos = psg.lcut(text)
+    # print("text_pos:", text_pos)
+    text_vocab = jieba.lcut(text)
+
+    # 词性字典
+    original_pos = []
+    for index, (word, word_pos) in enumerate(text_pos):
+        original_pos.append(word_pos)
+        if word_pos not in pos_dict:
+            pos_dict[word_pos] = len(pos_dict)
+    # 每一个字符对应的词性在词性字典中的编码
+    for i, j in text_pos:
+        if j not in pos2id:
+            pos2id[j] = len(pos2id)
+    # 词汇字典
+    original_vocab = []
+    for index, word_vocab in enumerate(text_vocab):
+        original_vocab.append(word_vocab)
+        if word_vocab not in vocab_dict:
+            vocab_dict[word_vocab] = len(vocab_dict)
+    # 每一个字符对应的词性在词性字典中的编码
+    for j in text_vocab:
+        if j not in vocab2id:
+            vocab2id[j] = len(vocab2id)
+    # print("original_text_pos:", self.vocab2id)
+    # 加入词性特征输入模型
+    input_pos = []
+    for i, j in text_pos:
+        for a in i:
+            input_pos.append(pos2id[j])
+    # 加入词汇特征输入模型
+    input_vocab = []
+    for i in text_vocab:
+        for a in i:
+            input_vocab.append(vocab2id[i])
+    # print("input_vocab:", input_vocab)
+    if len(input_pos) > 256:
+        input_pos = input_pos[0: 256]
+    else:
+        while len(input_pos) < 256:
+            input_pos.append(0)
+
+    if len(input_vocab) > 256:
+        input_vocab = input_vocab[0: 256]
+    else:
+        while len(input_vocab) < 256:
+            input_vocab.append(0)
+
+    token = tokenizer(text, padding='max_length', truncation=True, max_length=256)
+    input_ids = token['input_ids']
+    attention_mask = token['attention_mask']
+    token_type_ids = token['token_type_ids']
+    input_vocabulary.append(np.array(input_vocab))
+    input_poses.append(np.array(input_pos))
+
+    input_vocabulary = torch.tensor(input_vocabulary, dtype=torch.long)
+    input_poses = torch.tensor(input_poses, dtype=torch.long)
+    input_ids = torch.tensor([input_ids], dtype=torch.long)
+    attention_mask = torch.tensor([attention_mask], dtype=torch.long)
+    token_type_ids = torch.tensor([token_type_ids], dtype=torch.long)
+
+    # print('input_poses:', input_poses)
+    predicted = model(
+        input_ids,
+        attention_mask,
+        token_type_ids,
+        input_poses,
+        input_vocabulary,
+    )
+    print('predicted:', predicted)
+    pred_label = torch.argmax(predicted, dim=1)
+    print('Label:', pred_label)
+    print('Label:', labels[pred_label])
