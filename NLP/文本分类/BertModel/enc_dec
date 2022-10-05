@@ -1,0 +1,87 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from model import *
+
+device_all = torch.device("cuda:4" if torch.cuda.is_available() else "cpu")
+
+n_hidden = 128
+
+n_class = 512
+
+
+class Attention(nn.Module):
+    def __init__(self):
+        super(Attention, self).__init__()
+        self.enc_cell = nn.RNN(n_class, n_hidden, dropout=0.5)
+        self.dec_cell = nn.RNN(n_class, n_hidden, dropout=0.5)
+
+        # Linear for attention
+        self.attn = nn.Linear(n_hidden, n_hidden)
+        self.out = nn.Linear(n_hidden * 2, n_class)
+
+    def forward(self, enc_inputs, hidden, dec_inputs):
+        hidden.to(device_all)
+
+        enc_inputs = enc_inputs.transpose(0, 1)  # enc_inputs: [n_step(=n_step, time step), batch_size, n_class]
+        dec_inputs = dec_inputs.transpose(0, 1)  # dec_inputs: [n_step(=n_step, time step), batch_size, n_class]
+        enc_inputs = enc_inputs.float()
+        dec_inputs = dec_inputs.float()
+        # print("enc_inputs_fir:", enc_inputs)
+        # enc_outputs : [n_step, batch_size, num_directions(=1) * n_hidden], matrix F
+        # enc_hidden : [num_layers(=1) * num_directions(=1), batch_size, n_hidden]
+        enc_outputs, enc_hidden = self.enc_cell(enc_inputs, hidden)
+        enc_outputs.to(device_all)
+        enc_hidden.to(device_all)
+        # print("enc_outputs:", enc_outputs.size())
+        # print("enc_hidden:", enc_hidden.size())
+        trained_attn = []
+        hidden = enc_hidden
+        n_step = len(dec_inputs)
+        model = torch.empty([n_step, 1, n_class])
+        model.to(device_all)
+        for i in range(n_step):  # each time step
+            # print(dec_inputs[i].size())
+            # dec_output : [n_step(=1), batch_size(=1), num_directions(=1) * n_hidden]
+            # hidden : [num_layers(=1) * num_directions(=1), batch_size(=1), n_hidden]
+            # print("enc_inputs:", dec_inputs[i].unsqueeze(0).size())
+            # print(dec_inputs[i].unsqueeze(0).size())
+            dec_output, hidden = self.dec_cell(dec_inputs[i].unsqueeze(0), hidden)
+            dec_output.to(device_all)
+            enc_outputs.to(device_all)
+            # print("dec_output:", dec_output.size())
+            attn_weights = self.get_att_weight(dec_output, enc_outputs)  # attn_weights : [1, 1, n_step]
+            # print("attn_weights:", attn_weights)
+            # attn_weights.to(device_all)
+            trained_attn.append(attn_weights.squeeze().cpu().data.numpy())
+            # print('attn_weights:', attn_weights.size())
+            # print('enc_outputs:', enc_outputs.size())
+            # matrix-matrix product of matrices [1,1,n_step] x [1,n_step,n_hidden] = [1,1,n_hidden]
+
+            context = attn_weights.bmm(enc_outputs.transpose(0, 1))
+            context.to(device_all)
+            dec_output = dec_output.squeeze(0)  # dec_output : [batch_size(=1), num_directions(=1) * n_hidden]
+            context = context.squeeze(1)  # [1, num_directions(=1) * n_hidden]
+            # print('context:', context.size())
+            # print("dec_output:", dec_output.size())
+            model[i] = self.out(torch.cat((dec_output, context), 1))
+
+        # print('model:', model.size())
+        # make model shape [n_step, n_class]
+        return model.transpose(0, 1).squeeze(0).to(device_all), trained_attn
+
+    def get_att_weight(self, dec_output, enc_outputs):  # get attention weight one 'dec_output' with 'enc_outputs'
+        n_step = len(enc_outputs)
+        attn_scores = torch.zeros(n_step)  # attn_scores : [n_step]
+
+        for i in range(n_step):
+            attn_scores[i] = self.get_att_score(dec_output, enc_outputs[i])
+
+        # Normalize scores to weights in range 0 to 1
+        return F.softmax(attn_scores).view(1, 1, -1).to(device_all)
+
+    def get_att_score(self, dec_output, enc_output):  # enc_outputs [batch_size, num_directions(=1) * n_hidden]
+        score = self.attn(enc_output)  # score : [batch_size, n_hidden]
+        # print('decoder_out:', dec_output.view(-1).size())
+        # print('decoder_out:', score.view(-1).size())
+        return torch.dot(dec_output.view(-1), score.view(-1))  # inner product make scalar value
