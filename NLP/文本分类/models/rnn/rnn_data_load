@@ -1,0 +1,129 @@
+import numpy
+import numpy as np
+import torch
+import torch.nn as nn
+from self_attention import MultiHeadAttention
+from enc_dec import Attention
+import torch.nn.functional as F
+from transformers import BertModel, AlbertModel, XLNetTokenizer, XLNetModel, AutoTokenizer, AutoModel
+
+
+class RNN(nn.Module):
+    def __init__(self, num_labels, emb_size, hidden_size=312, dropout=0.2, pad_idx=0):
+        super().__init__()
+        self.embedding = nn.Embedding(emb_size, 312, padding_idx=pad_idx)
+        self.lstm = nn.LSTM(hidden_size, 156, num_layers=1, batch_first=True, bidirectional=True)
+
+        self.enc_dec = Attention()
+        self.MultiHeadAttention = MultiHeadAttention()
+        self.fc = nn.Linear(hidden_size * 2, num_labels)
+        self.fc_demo = nn.Linear(312, num_labels)
+        self.classifier = nn.Linear(312, num_labels)
+
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, input_ids, input_pos, input_labels, input_pinyin, input_vocabulary, juhao_input):
+        device_lstm = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
+        for i in range(len(input_ids)):
+            if len(input_ids[i]) > 1500:
+                input_ids = input_ids[:, 0: 1500]
+                input_pinyin = input_pinyin[:, 0: 1500]
+                input_pos = input_pos[:, 0: 1500]
+                input_vocabulary = input_vocabulary[:, 0: 1500]
+                juhao_input = juhao_input[:, 0: 1500]
+            # else:
+            #     min_len = min(len(input_ids[i]), len(input_pinyin[i]), len(input_pos[i]), len(input_vocabulary[i]),
+            #                   len(juhao_input[i]))
+            #     input_ids = input_ids[:, 0: min_len]
+            #     input_pinyin = input_pinyin[:, 0: min_len]
+            #     input_pos = input_pos[:, 0: min_len]
+            #     input_vocabulary = input_vocabulary[:, 0: min_len]
+            #     juhao_input = juhao_input[:, 0: min_len]
+
+        # print('input_pinyin:', input_pinyin.size())
+        embedded = self.dropout(self.embedding(input_ids))
+        pos_vector = self.embedding(input_pos)
+        pinyin_vector = self.embedding(input_pinyin)
+        labels_vector = self.embedding(input_labels)
+        vocabulary_vector = self.embedding(input_vocabulary)
+        seg_vector = self.embedding(juhao_input)
+        # print('embedded:', embedded.size())
+        # output: [batch,seq,2*hidden if bidirection else hidden]
+        # hidden/cell: [bidirec * n_layers, batch, hidden]
+        output, (hidden, cell) = self.lstm(embedded)
+
+        # enc_dec_output: [batch_size, input_size]
+        enc_dec_output, _ = self.enc_dec(embedded, hidden, labels_vector)
+        # print('output:', enc_dec_output.size())
+        # print('hidden:', hidden.size())
+        # print('cell:', hidden[-2, :, :].size())
+        # print('cell:', hidden[-1, :, :].size())
+        # print('cell:', cell.size())
+
+        out_1, attn_1 = self.MultiHeadAttention(output, output, output)
+        # print('out_1:', out_1.size())
+        out = pos_vector + vocabulary_vector + seg_vector + out_1
+        # logits = self.fc_demo(out[:, -1, :] + enc_dec_output)
+        # print('logits:', logits.size())
+        # concat the final forward (hidden[-2,:,:]) and backward (hidden[-1,:,:]) hidden layers
+        hidden = self.dropout(torch.cat((hidden[-2, :, :], hidden[-1, :, :]), dim=1))
+        # hidden = [batch size, hid dim * num directions]，
+        # print('hidden:', hidden.size())
+        final = self.fc_demo(hidden) + self.fc_demo(out[:, -1, :] + enc_dec_output)
+        # print('final:', final.size())
+        return final  # 在接一个全连接层，最终输出[batch size, output_dim]
+
+    # def forward(self, input_ids, input_pinyin, input_pos, input_vocabulary, juhao_input):
+    #     device_all = torch.device("cuda:4" if torch.cuda.is_available() else "cpu")
+    #     embedded = self.dropout(self.embedding(input_ids))
+    #     output, (hidden, cell) = self.rnn(embedded)
+    #     hidden = self.dropout(torch.cat((hidden[-2, :, :], hidden[-1, :, :]), dim=1))
+    #     final_rnn = self.fc(hidden.squeeze(0))
+    #     # print("labels_vector_len:", juhao_index)
+    #     # for i in range(len(input_ids)):
+    #     #     if len(input_ids[i]) > 128:
+    #     #         input_ids = input_ids[:, 0: 128]
+    #     #         input_pinyin = input_pinyin[:, 0: 128]
+    #     #         input_pos = input_pos[:, 0: 128]
+    #     #         input_vocabulary = input_vocabulary[:, 0: 128]
+    #     #         juhao_input = juhao_input[:, 0: 128]
+    #     #     else:
+    #     #         min_len = min(len(input_ids[i]), len(input_pinyin[i]), len(input_pos[i]), len(input_vocabulary[i]),
+    #     #                       len(juhao_input[i]))
+    #     #         input_ids = input_ids[:, 0: min_len]
+    #     #         input_pinyin = input_pinyin[:, 0: min_len]
+    #     #         input_pos = input_pos[:, 0: min_len]
+    #     #         input_vocabulary = input_vocabulary[:, 0: min_len]
+    #     #         juhao_input = juhao_input[:, 0: min_len]
+    #
+    #     pos_vector = self.emb(input_pos)
+    #     pinyin_vector = self.emb_pinyin(input_pinyin)
+    #     seg_vector = self.emb(juhao_input)
+    #     vocabulary_vector = self.emb(input_vocabulary)
+    #     # print('input_ids:', input_ids.unsqueeze(0).size())
+    #     output_input = self.model(input_ids)
+    #     # print('lne_output:', len(output_input[0]))
+    #     # encoder-decoder结构
+    #     hidden = torch.zeros(2, 1, 128)
+    #     hidden = hidden.to(device_all)
+    #     self.enc_dec.to(device_all)
+    #     enc_dec_output, _ = self.enc_dec(output_input[0], hidden, pinyin_vector)
+    #
+    #     enc_dec_output = enc_dec_output.transpose(0, 1)
+    #     # print('output_de:', pinyin_input.size())
+    #     times = 0
+    #     for i in range(len(vocabulary_vector)):
+    #         times += 1
+    #     # output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+    #
+    #     # print('output_de:', output_input[0].size())
+    #     out_input, _ = self.lstm_1(output_input[0])
+    #     # print('out_input:', out_input.size())
+    #     # print('pos_vector:', pos_vector.size())
+    #     # print('vocabulary_vector:', vocabulary_vector.size())
+    #     # print('seg_vector:', seg_vector.size())
+    #     # print('enc_dec_output:', enc_dec_output.size())
+    #     out = out_input + pos_vector + vocabulary_vector + seg_vector + enc_dec_output
+    #     logits = self.classifier(out[:, -1, :])  # 取最后时刻的输出
+    #     print('logits:', logits.size())
+    #     return self.softmax(logits)
