@@ -1,0 +1,263 @@
+import os
+import time
+import torch
+import torch.nn as nn
+from transformers import BertTokenizer, AdamW, BertConfig, AlbertConfig
+from torch.utils.data import DataLoader
+from model import BertClassifier, LstmClassifier, RNN
+from label_attention import *
+
+
+# from tqdm import tqdm
+
+
+def main():
+    # 参数设置
+    # batch_size = 2
+    device = torch.device("cuda:5" if torch.cuda.is_available() else "cpu")
+    epochs = 100
+    learning_rate = 6e-5  # Learning Rate不宜太大
+
+    train_dev_data = TrainDevData()
+    train_data = train_dev_data.train_data
+    train_dataloader = train_dev_data.train_dataloader
+    eval_dataloader = train_dev_data.eval_dataloader
+
+    # train_size = round(len(train_data) * 0.7)
+    # validate_size = round(len(train_data) * 0.3)
+    # test_size = len(train_data[0]) - validate_size - train_size
+    # print("train_size:", train_size)
+
+    emb_size = len(train_data.chars2id)
+    vocab_size = len(train_data.vocab_dict)
+    pinyin_size = len(train_data.pinyin2id)
+    labels_dict = {"体育": 0, "娱乐": 1, "家居": 2, "房产": 3, "教育": 4, "时尚": 5, "时政": 6, "游戏": 7, "科技": 8, "财经": 9}
+    num_dict = {k: v for v, k in labels_dict}
+    labels_input = list(labels_dict.values())
+    print("num_dict:", num_dict)
+    print("labels_dict:", labels_dict)
+    print("labels_input:", labels_input)
+    print("emb_size:", emb_size)
+    print("pinyin_size:", pinyin_size)
+    print("voca_size:", vocab_size)
+    # train_dataset, validate_dataset = \
+    #     torch.utils.data.random_split(train_data, [train_size, validate_size],
+    #                                   generator=torch.Generator().manual_seed(36))
+
+    # train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    # eval_dataloader = DataLoader(valid_dataset, batch_size=16, shuffle=True)
+
+    # 读取BERT的配置文件
+    # bert_config = AlbertConfig.from_pretrained('hfl/xlnet-base-cased-path')
+    # tokenizer = XLNetTokenizer.from_pretrained('xlnet-base-cased-path')
+    num_labels = len(train_data.labels2id)
+    print("num_labels:", num_labels)
+    # 初始化模型
+    model = RNN(num_labels, vocab_size)
+    model.to(device)
+    # 优化器  .to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    # 损失函数
+    criterion = nn.CrossEntropyLoss()
+
+    best_acc = 0
+    start_time = time.time()
+    for epoch in range(1, epochs + 1):
+        accuracy = 0  # 准确率
+        losses = 0  # 损失
+        model.train()
+        train_batch = 0
+        rcl_num = 0  # 召回率
+        batch_num = 0
+        for index, (input_ids, label_id, seq_len, input_pos, input_pinyin, input_vocabulary,
+                    juhao_input) in enumerate(train_dataloader):
+            # print('seq_len_for:', seq_len)
+            train_batch += 1
+            # 梯度清零
+            model.zero_grad()
+            # 传入数据，调用model.forward().to(device)
+            labels_input = torch.tensor(labels_input)
+            output = model(
+                # input_ids=input_ids,
+                # input_pos=input_pos,
+                # input_pinyin=input_pinyin,
+                # input_vocabulary=input_vocabulary,
+                # juhao_input=juhao_input,
+                # juhao_index=juhao_index,
+
+                input_ids=input_ids.to(device),
+                input_pos=input_pos.to(device),
+                input_labels=labels_input.to(device),
+                input_pinyin=input_pinyin.to(device),
+                input_vocabulary=input_vocabulary.to(device),
+                juhao_input=juhao_input.to(device),
+            )
+
+            # 计算loss
+            # print(output)
+            # print(label_id.squeeze(1))
+            loss = criterion(output, label_id.squeeze(1).to(device))
+            # loss = criterion(output, label_id.squeeze(1))
+            losses += loss.item()
+            pred_labels = torch.argmax(output, dim=1)  # 预测出的label
+            # if train_batch % 5000 == 0:
+            #     print("train_batch:", train_batch)
+            #     print(' -- Train -- ')
+            #     print("label_oiginal:", label_id.view(1, -1).squeeze())
+            #     print("label_predict:", pred_labels)
+            acc = torch.sum(pred_labels == label_id.squeeze(1).to(device)).item() / len(pred_labels)  # acc
+            # acc = torch.sum(pred_labels == label_id.squeeze(1)).item() / len(pred_labels)  # acc
+            accuracy += acc
+            print("acc:", acc)
+            loss.backward()
+            # print("acc:", acc)
+            optimizer.step()
+        # print("average_acc:", accuracy)
+        # print("average_acc:", len(train_dataloader))
+        average_loss = losses / len(train_dataloader)
+        average_acc = accuracy / len(train_dataloader)
+        print('Epoch:', epoch, '\n', '\tTrain acc:', average_acc, '\tLoss:', average_loss)
+
+        # 验证
+        accuracy = 0  # 准确率
+        model.eval()
+        losses = 0  # 损失
+        # valid_bar = tqdm(valid_dataloader, ncols=100)
+        print('# 验证')
+        result = []
+        result_true = []
+        result_pre = []
+        for x, y in labels_dict.items():
+            result.append(x)
+        result_pad = [0] * len(result)
+        # print('result_pad:', result_pad)
+        for i in range(len(result_pad)):
+            result_pre.append([result_pad[i], 0, result[i]])
+            result_true.append([result_pad[i], 0, result[i]])
+        # print('result_pre:', result_pre)
+        # print('result_true:', result_true)
+        for index, (input_ids, label_id, seq_len, input_pos, input_pinyin, input_vocabulary,
+                    juhao_input) in enumerate(eval_dataloader):
+            model.zero_grad()
+            # 显示训练进度
+            # 传入数据，调用model.forward().to(device)
+            labels_input = torch.tensor(labels_input)
+            output = model(
+                # input_ids=input_ids,
+                # # token_type_ids=token_type_ids.to(device),
+                # # attention_mask=attention_mask.to(device),
+                # input_pos=input_pos,
+                # input_pinyin=input_pinyin,
+                # input_vocabulary=input_vocabulary,
+                # juhao_input=juhao_input,
+                # juhao_index=juhao_index,
+
+                input_ids=input_ids.to(device),
+                input_pos=input_pos.to(device),
+                input_labels=labels_input.to(device),
+                input_pinyin=input_pinyin.to(device),
+                input_vocabulary=input_vocabulary.to(device),
+                juhao_input=juhao_input.to(device),
+            )
+
+            # 计算loss
+            loss = criterion(output, label_id.squeeze(1).to(device))
+            # loss = criterion(output, label_id.squeeze(1))
+            # print("loss:", loss)
+            losses += loss.item()
+
+            pred_labels = torch.argmax(output, dim=1)  # 预测出的label
+
+            # print("2_label_id:", len(label_id))
+            for x in label_id.data:
+                result_true[x.item()][0] += 1
+            # print("2_result_true:", result_true)
+            # print("2_predict:", pred_labels)
+            # print("1_original:", label_id.view(1, -1).squeeze())
+            for x in range(len(pred_labels.data)):
+                # print("pred_labels_data:", pred_labels.data[x].item())
+                # print("v_data:", label_id.data[x].item())
+                if pred_labels.data[x].item() == label_id.data[x].item():
+                    result_pre[pred_labels.data[x]][0] += 1
+                result_pre[pred_labels.data[x]][1] += 1
+            # print("train_batch:", train_batch)
+            # print(' -- Eval -- ')
+            # print("label_oiginal:", label_id.view(1, -1).squeeze())
+            # print("label_predict:", pred_labels)
+
+            acc = torch.sum(pred_labels == label_id.squeeze(1).to(device)).item() / len(pred_labels)
+            # acc = torch.sum(pred_labels == label_id.squeeze(1)).item() / len(pred_labels)
+            accuracy += acc
+            batch_num += len(label_id)
+            # print("acc:", acc)
+        recall = []
+        precision = []
+        for i in range(len(result_true)):
+            if result_true[i][0] == 0:
+                recall.append('None')
+                continue
+            if result_pre[i][0] / result_true[i][0] > 1.0:
+                recall.append(1.0)
+            else:
+                recall.append(round(result_pre[i][0] / result_true[i][0], 4))
+
+        for i in range(len(result_true)):
+            if result_true[i][0] == 0:
+                precision.append('None')
+                continue
+            if result_pre[i][0] == 0:
+                precision.append(0.0)
+            # elif result_true[i][0] / result_pre[i][0] > 1.0:
+            #     precision.append(1.0)
+            else:
+                precision.append(round(result_pre[i][0] / result_pre[i][1], 4))
+        print("recall:", recall)
+        print("precision:", precision)
+        print('result_pre:', result_pre)
+        print('result_true:', result_true)
+        recall_info = []
+        precision_info = []
+        for i in range(len(result_true)):
+            if result_true[i][0] != 0:
+                recall_info.append([recall[i], result[i]])
+                precision_info.append([precision[i], result[i]])
+
+        pre_sum = 0
+        rec_sum = 0
+        for i in range(len(precision_info)):
+            pre_sum += precision_info[i][0]
+            rec_sum += recall_info[i][0]
+
+        precision_score = pre_sum / len(precision_info)
+        recall_score = rec_sum / len(precision_info)
+        # print("recall_info:", precision_score + recall_score)
+        # print("recall_info:", 2 * precision_score * recall_score)
+        if precision_score + recall_score == 0:
+            f1_score = 0
+        else:
+            f1_score = 2 * precision_score * recall_score / (precision_score + recall_score)
+        # if train_batch % 500 == 0:
+        print("recall_info:", recall_info)
+        print("precision_info:", precision_info)
+        print("precision_score:", precision_score)
+        print("recall_score:", recall_score)
+        print("f1_score:", f1_score)
+        average_loss = losses / len(eval_dataloader)
+        average_acc = accuracy / len(eval_dataloader)
+        R = rcl_num / batch_num
+        # f1 = 2 * acc * R / (acc + R)
+        print('\tValid ACC:', average_acc, '\tR_value:', R, 'Loss:', average_loss)
+
+        if not os.path.exists('models'):
+            os.makedirs('models')
+
+        # 判断并保存验证集上表现最好的模型
+        if average_acc > best_acc:
+            best_acc = average_acc
+            torch.save(model.state_dict(), 'models/lstm/best_model.pkl')
+    run_time = time.time() - start_time
+    print("run_time:", run_time / 3600, 'h')
+
+
+if __name__ == '__main__':
+    main()
