@@ -1,0 +1,82 @@
+import numpy
+import numpy as np
+import torch
+import torch.nn as nn
+from self_attention import MultiHeadAttention
+from enc_dec import Attention
+import torch.nn.functional as F
+from transformers import BertModel, AlbertModel, XLNetTokenizer, XLNetModel, AutoTokenizer, AutoModel
+
+
+class CNN(nn.Module):
+    def __init__(self, num_labels, emb_size, filter_sizes, dropout=0.2, pad_idx=0):
+        super().__init__()
+        self.embedding = nn.Embedding(emb_size, 312, padding_idx=pad_idx)
+        self.convs = nn.ModuleList([
+            nn.Conv2d(in_channels=1, out_channels=5, kernel_size=(fs, 312))
+            for fs in filter_sizes
+        ])
+        self.enc_dec = Attention()
+        self.MultiHeadAttention = MultiHeadAttention()
+        self.classifier = nn.Linear(312, num_labels)
+        # in_channels：输入的channel，文字都是1
+        # out_channels：输出的channel维度
+
+        self.fc = nn.Linear(len(filter_sizes) * 5, num_labels)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, input_ids, input_labels, input_pinyin, input_pos, input_vocabulary, juhao_input):
+        for i in range(len(input_ids)):
+            if len(input_ids[i]) > 1500:
+                input_ids = input_ids[:, 0: 1500]
+                input_pinyin = input_pinyin[:, 0: 1500]
+                input_pos = input_pos[:, 0: 1500]
+                input_vocabulary = input_vocabulary[:, 0: 1500]
+                juhao_input = juhao_input[:, 0: 1500]
+        pos_vector = self.embedding(input_pos)
+        pinyin_vector = self.embedding(input_pinyin)
+        labels_vector = self.embedding(input_labels)
+        vocabulary_vector = self.embedding(input_vocabulary)
+        seg_vector = self.embedding(juhao_input)
+        embedded = self.dropout(self.embedding(input_ids))  # [batch size, sent len, emb dim]
+        # print('embedded:', embedded.size())
+
+        # encoder-decoder
+        hidden = torch.zeros(1, 1, 312)
+        enc_dec_output, _ = self.enc_dec(embedded, hidden, labels_vector)
+
+        # self-attention
+        out_1, attn_1 = self.MultiHeadAttention(embedded, embedded, embedded)
+        # print(enc_dec_output.size())
+        # print(out_1.size())
+        logits = self.classifier(out_1[:, -1, :] + enc_dec_output)
+        # print(logits.size())
+        embedded = embedded.unsqueeze(1)  # [batch size, 1, sent len, emb dim]
+        pos_vector = pos_vector.unsqueeze(1)  # [batch size, 1, sent len, emb dim]
+        pinyin_vector = pinyin_vector.unsqueeze(1)  # [batch size, 1, sent len, emb dim]
+        labels_vector = labels_vector.unsqueeze(1)  # [batch size, 1, sent len, emb dim]
+        vocabulary_vector = vocabulary_vector.unsqueeze(1)  # [batch size, 1, sent len, emb dim]
+        seg_vector = seg_vector.unsqueeze(1)  # [batch size, 1, sent len, emb dim]
+        # print('pos_vector:', pos_vector.size())
+
+        conved = [F.relu(conv(embedded)).squeeze(3) for conv in self.convs]
+        pos_vector = [F.relu(conv(pos_vector)).squeeze(3) for conv in self.convs]
+        pinyin_vector = [F.relu(conv(pinyin_vector)).squeeze(3) for conv in self.convs]
+        vocabulary_vector = [F.relu(conv(vocabulary_vector)).squeeze(3) for conv in self.convs]
+        seg_vector = [F.relu(conv(seg_vector)).squeeze(3) for conv in self.convs]
+        # print('embedded:', len(conved))
+        # conved = [batch size, num_filter, sent len - filter_sizes+1]
+        # print(conved[0].size())
+        pooled = [F.max_pool1d(conv, conv.shape[2]).squeeze(2) for conv in conved]  # [batch,num_filter]
+        pooled_pos = [F.max_pool1d(conv, conv.shape[2]).squeeze(2) for conv in pos_vector]
+        pooled_pinyin = [F.max_pool1d(conv, conv.shape[2]).squeeze(2) for conv in pinyin_vector]
+        pooled_vocabulary = [F.max_pool1d(conv, conv.shape[2]).squeeze(2) for conv in vocabulary_vector]
+        pooled_seg = [F.max_pool1d(conv, conv.shape[2]).squeeze(2) for conv in seg_vector]
+
+        cat = self.dropout(torch.cat(pooled, dim=1)) + self.dropout(torch.cat(pooled_pos, dim=1)) + self.dropout(
+            torch.cat(pooled_pinyin, dim=1)) + self.dropout(torch.cat(pooled_vocabulary, dim=1)) + self.dropout(
+            torch.cat(pooled_seg, dim=1))
+        # print(self.fc(cat).size())
+        # cat = [batch size, num_filter * len(filter_sizes)]
+        logits += self.fc(cat)
+        return logits
