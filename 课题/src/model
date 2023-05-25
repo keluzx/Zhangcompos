@@ -1,0 +1,216 @@
+import torch
+from torch.utils.data import Dataset, DataLoader
+import pandas as pd
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from collections import Counter
+from sklearn.model_selection import train_test_split
+from imblearn.under_sampling import RandomUnderSampler
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from imblearn.over_sampling import RandomOverSampler, SMOTE, BorderlineSMOTE
+from imblearn.under_sampling import ClusterCentroids, RandomUnderSampler, TomekLinks, \
+    NearMiss, CondensedNearestNeighbour, EditedNearestNeighbours, \
+    RepeatedEditedNearestNeighbours, AllKNN, InstanceHardnessThreshold, NeighbourhoodCleaningRule
+
+# 读取Excel数据
+data = pd.read_excel('./子宫数据.xlsx')
+# 提取特征和标签
+features = data.drop(
+    columns=['LABEL', 'TIJIANBM', 'JIELUN', '性别', '尿粘液丝', '尿隐血', '尿葡萄糖', '尿蛋白质', '尿比重',
+             '尿维生素C'])
+labels = data['LABEL']
+
+# X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.1, random_state=7)
+
+# Border-line SMOTE法过采样
+# smote = BorderlineSMOTE(random_state=2)
+# X_train, y_train = smote.fit_resample(X_train, y_train)
+
+# 使用随机欠采样算法
+# rus = RandomUnderSampler(random_state=42)
+# X_train, y_train = rus.fit_resample(X_train, y_train)
+
+#  去除 Tomek Links 后的数据 sample 方法
+# tl = TomekLinks(sampling_strategy='majority')
+# X_train, y_train = tl.fit_resample(X_train, y_train)
+# print('Resampled dataset shape %s' % Counter(y_train))
+
+# from imblearn.over_sampling import SMOTE
+# smote = SMOTE(random_state=1)
+# X_train, y_train = smote.fit_resample(X_train, y_train)
+
+# from imblearn.over_sampling import ADASYN
+# adasyn = ADASYN(random_state=0)
+# X_train, y_train = adasyn.fit_resample(X_train, y_train)
+
+
+
+from keras.layers import Dense, LSTM, GRU, Conv1D, Flatten, Dropout, Embedding, MaxPooling1D
+from keras.models import Sequential
+import numpy as np
+from sklearn.model_selection import StratifiedKFold
+
+# 设置 StratifiedKFold 折数
+n_splits = 7
+
+# 初始化 StratifiedKFold 类
+skf = StratifiedKFold(n_splits=n_splits)
+
+model = Sequential()
+model.add(Conv1D(filters=64, kernel_size=15, strides=1, padding="same", activation='sigmoid'))
+model.add(Conv1D(filters=64, kernel_size=5, strides=1, padding="same", activation='sigmoid'))
+model.add(Conv1D(filters=64, kernel_size=1, strides=1, padding="same", activation='sigmoid'))
+model.add(MaxPooling1D(pool_size=2, strides=1, padding="valid"))
+# model.add(LSTM(64, activation='tanh'))
+model.add(GRU(128, activation='sigmoid'))
+model.add(Dense(1, activation='sigmoid'))
+
+# 初始化交叉验证的 score 数组用于存放训练模型的评估指标值
+scores = []
+accuracy_list = []
+precision_list = []
+f1_score_list = []
+recall_list = []
+
+# 循环进行交叉验证
+for fold, (train_index, val_index) in enumerate(skf.split(features, labels)):
+    # 编译模型
+    # optimizer = Adam(learning_rate=0.05)
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=["accuracy"])
+
+    # 取出本次交叉验证的训练集和验证集数据
+    X_train, y_train = features.values[train_index], labels[train_index]
+    X_test, y_test = features.values[val_index], labels[val_index]
+
+    X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], 1)
+    y_train = y_train.values.reshape(y_train.shape[0], 1)
+    X_test = X_test.reshape(X_test.shape[0], X_test.shape[1], 1)
+    y_test = y_test.values.reshape(y_test.shape[0], 1)
+
+    # 训练模型
+    print(f"Training the model for fold {fold + 1}")
+    history = model.fit(X_train, y_train, epochs=80, batch_size=32, validation_data=(X_test, y_test), verbose=1)
+
+    # 每次训练之后，记录模型在验证集上的评估指标值
+    score = model.evaluate(X_test, y_test, verbose=1)
+    scores.append(score)
+
+    model.save('./model_path/CNN/cnn_lstm.h5')
+
+    from sklearn.metrics import roc_curve, auc, roc_auc_score
+    import numpy as np
+    from keras.models import load_model
+
+    model1 = load_model('./model_path/CNN/cnn_lstm.h5')
+    pred1 = model.predict(X_test)
+    print('2_2')
+
+    final_pred = []
+    for i in pred1:
+        final_pred.append([i])
+
+    final_pred = np.array(final_pred).reshape(-1, 1)
+    # print(final_pred.reshape(-1))
+    # print(y_test.reshape(-1))
+    auc1 = roc_auc_score(y_test, final_pred)
+    fpr_rf, tpr_rf, thresholds_rf = roc_curve(y_test, final_pred, pos_label=1)
+    roc_auc_rf = auc(fpr_rf, tpr_rf)
+
+    import matplotlib.pyplot as plt
+
+    plt.figure(figsize=(8, 6), dpi=80)
+    plt.rc('font', family='SimHei')
+    plt.plot(fpr_rf, tpr_rf, marker='.', color='cornflowerblue', label='CNN-LSTM auc = %0.2f' % roc_auc_rf)
+
+    plt.legend(loc='lower right', fontsize=12)
+    plt.plot([0, 1], [0, 1], marker='.', )  # color='royalblue'
+    plt.ylabel('True Positive Rate', fontsize=14)
+    plt.xlabel('Flase Positive Rate', fontsize=14)
+    plt.grid(True)
+    # plt.show()
+
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+
+    # 计算预测值
+    result_pred = []
+    result_true = []
+    classes_x = np.argmax(pred1, axis=1)
+
+    for i in classes_x:
+        result_pred.append(i)
+    for i in y_test.reshape(-1):
+        result_true.append(i)
+
+    new_pred_ = []
+    new_true = []
+    for i in pred1.reshape(-1):
+        if i > 0.5:
+            new_pred_.append(1)
+        else:
+            new_pred_.append(0)
+    for i in result_true:
+        new_true.append(i)
+
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+    # 获取预测结果
+    print(result_true)
+    print(new_pred_)
+    print('cnn_result')
+
+    # 计算accuracy
+    accuracy = accuracy_score(result_true, new_pred_)
+    # 计算precision
+    precision = precision_score(result_true, new_pred_, average='weighted', pos_label=1)
+    # 计算recall
+    recall = recall_score(result_true, new_pred_, average='weighted', pos_label=1)
+    # 计算f1-score
+    f1 = f1_score(result_true, new_pred_, average='weighted', pos_label=1)
+
+    accuracy_list.append(accuracy)
+    precision_list.append(precision)
+    recall_list.append(recall)
+    f1_score_list.append(f1)
+
+final_accuracy = sum(accuracy_list) / len(accuracy_list)
+final_precision = sum(precision_list) / len(precision_list)
+final_recall = sum(recall_list) / len(recall_list)
+final_f1_score = sum(f1_score_list) / len(f1_score_list)
+
+# 最终输出7次验证集评估指标的平均值
+print('Accuracy: ', final_accuracy)
+print('Precision: ', final_precision)
+print('Recall: ', final_recall)
+print('F1-score: ', final_f1_score)
+# print('AUC:', sum(accuracy_list) / len(accuracy_list))
+
+# 将各种性能指标存储在列表中
+performance_metrics = [final_accuracy, final_precision, final_recall, final_f1_score]
+
+import matplotlib.pyplot as plt
+
+# 各种指标的名称与颜色
+metric_names = ['Accuracy', 'Precision', 'Recall', 'F1 Score']
+colors = ['r', 'g', 'b', 'm']
+
+# 绘制折线图
+fig, ax = plt.subplots()
+for i, metric in enumerate(performance_metrics):
+    ax.plot([i, i], [0, metric], color=colors[i], marker='o', label=metric_names[i])
+    ax.plot(i, metric, color=colors[i], marker='x')
+    ax.annotate('{:.3f}'.format(metric), xy=(i, metric), xytext=(i + 0.1, metric + 0.05))
+
+# 设置图例和标题
+ax.legend()
+ax.set_xticks(range(len(metric_names)))
+ax.set_xticklabels(metric_names, fontsize=10)
+ax.set_xlabel('Performance Metrics')
+ax.set_ylabel('Scores')
+ax.set_title('Model Performance Metrics')
+plt.show()
+
+
+
